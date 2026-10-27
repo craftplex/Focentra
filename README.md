@@ -1,11 +1,11 @@
 <div align="center">
 
-# ⏱️Focentra (v8.0.0)
+# ⏱️ Focentra
 
-### *Distraction-Free Offline Study Timer & Deep Work Analytics for Android*
+### Distraction-Free Offline Study Timer & Deep Work Analytics for Android
 
 [![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Material_3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Offline First](https://img.shields.io/badge/Architecture-100%25_Offline_First-00897B?style=for-the-badge&logo=sqlite&logoColor=white)](#-privacy--offline-first-guarantee)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/craftplex/Focentra/actions)
@@ -14,17 +14,68 @@
 
 <br/>
 
-**Focentra** is an open-source, privacy-first personal productivity and study timer application crafted for Android. Designed from the ground up for students, researchers, and engineers, Focentra empowers you to build laser-focused study habits with powerful interval timers, ambient soundscapes, multi-period analytics, visual heatmaps, and secure local companion integrations—**without requiring an account, internet connection, or cloud subscription.**
+<p>
+  <a href="#-download-focentra"><img src="https://img.shields.io/badge/Download-APK-22c55e?style=for-the-badge" alt="Download APK" /></a>
+  <a href="#-key-features"><img src="https://img.shields.io/badge/Explore-Features-2563eb?style=for-the-badge" alt="Explore Features" /></a>
+  <a href="#-project-architecture"><img src="https://img.shields.io/badge/View-Architecture-7c3aed?style=for-the-badge" alt="View Architecture" /></a>
+</p>
 
-<br/>
+<p>
+  <strong>Focentra</strong> is a privacy-first, distraction-free study and deep work app for Android designed for students, researchers, engineers, and serious learners.
+  It helps you focus, track your progress, and understand your concentration patterns without any cloud dependency, account sign-up, or invasive tracking.
+</p>
 
-[📥 Download APK](#-download-focentra) • [✨ Key Features](#-key-features) • [🔌 Daynexa Integration](#-daynexa-integration-api-v1) • [🏛️ Architecture](#️-project-architecture) • [🛠️ Setup Guide](#-setup-instructions-for-developers) • [🤝 Contributing](#-contributing)
+<p>
+  <img src="https://raw.githubusercontent.com/craftplex/Focentra/main/docs/screenshots/dashboard.svg" width="220" alt="Dashboard Preview" />
+  <img src="https://raw.githubusercontent.com/craftplex/Focentra/main/docs/screenshots/timer.svg" width="220" alt="Timer Preview" />
+  <img src="https://raw.githubusercontent.com/craftplex/Focentra/main/docs/screenshots/statistics.svg" width="220" alt="Analytics Preview" />
+</p>
+
+</div>
+
+<div align="center">
+
+<svg width="900" height="180" viewBox="0 0 900 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated focus signal">
+  <defs>
+    <linearGradient id="bgGlow" x1="0%" x2="100%" y1="0%" y2="0%">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="50%" stop-color="#171f2f"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="ringGlow" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="50%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="900" height="180" rx="20" fill="url(#bgGlow)"/>
+  <g>
+    <circle cx="100" cy="90" r="34" fill="none" stroke="url(#ringGlow)" stroke-width="4" opacity="0.8">
+      <animate attributeName="r" values="28;38;28" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.5;1;0.5" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="100" cy="90" r="12" fill="#22d3ee" opacity="0.9"/>
+    <path d="M150 90h150" stroke="#38bdf8" stroke-width="6" stroke-linecap="round" opacity="0.8">
+      <animate attributeName="stroke-width" values="4;8;4" dur="1.8s" repeatCount="indefinite"/>
+    </path>
+    <path d="M330 90h220" stroke="#a78bfa" stroke-width="6" stroke-linecap="round" opacity="0.8">
+      <animate attributeName="stroke-dasharray" values="0 30;24 30;0 30" dur="2.2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M580 90h170" stroke="#34d399" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+    <circle cx="770" cy="90" r="18" fill="none" stroke="#34d399" stroke-width="4">
+      <animate attributeName="r" values="14;22;14" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <text x="450" y="155" text-anchor="middle" font-size="20" font-family="Segoe UI, sans-serif" fill="#e2e8f0" letter-spacing="3">FOCUS • TRACK • IMPROVE</text>
+</svg>
+
+</div>
 
 ---
 
-</div>
-  
 ## 📖 Table of Contents
+
 - [💡 Why Focentra?](#-why-focentra)
 - [🚀 Key Features](#-key-features)
 - [📸 Screenshots & Visual Preview](#-screenshots--visual-preview)
@@ -51,34 +102,39 @@
 - [📄 License](#-license)
 - [👨‍💻 Author & Developer](#-author--developer)
 - [📬 Contact & Community](#-contact--community)
+
 ---
 
 ## 💡 Why Focentra?
 
-Modern productivity apps are often bloated with mandatory sign-ins, intrusive push notifications, aggressive subscription paywalls, and persistent cloud tracking. 
+Modern productivity apps are often bloated with mandatory sign-ins, intrusive push notifications, aggressive subscriptions, and cloud tracking.
 
-**Focentra takes a fundamentally different approach:**
-- **Zero Friction**: Launch the app and start studying immediately. No registration, no email verification, no logins.
-- **True Ownership**: All study logs, notes, productivity ratings, and streaks reside 100% locally on your device in an encrypted Room SQLite database.
-- **Deep Work Focus**: Flexible study modes (Countdown, Stopwatch, and Pomodoro) combined with built-in ambient white noise and distraction tracking.
-- **Actionable Insights**: GitHub-style 16-week heatmap matrices, 24-hour concentration curves, and algorithmic Focus Scores help you uncover your peak study hours.
+Focentra takes a different approach:
+
+- Zero friction: open the app and begin studying immediately.
+- Full ownership: your sessions, notes, analytics, streaks, and subjects live locally on your device.
+- Deep work focus: customizable timer modes, ambient sound, and distraction shields built for concentration.
+- Actionable insight: visual analytics uncover peak study windows, consistency, and performance trends.
+- 100% local-first: no cloud sync, no third-party analytics, no ads, no login wall.
 
 ---
 
 ## 🚀 Key Features
 
-| Category | Features Included |
+| Category | Highlights |
 | :--- | :--- |
-| ⏱️ **Timer Engine** | • **3 Study Modes**: Countdown timer with presets, open-ended Stopwatch, and structured multi-cycle Pomodoro.<br/>• **Background Service**: Uninterrupted session tracking via Android Foreground Service with interactive notifications.<br/>• **Distraction Logging**: One-tap distraction counter with tags to measure focus friction.<br/>• **Ambient Soundscape**: Built-in sound generator (Rain, Cafe, White Noise, Stream, Forest, Ambient). |
-| 📇 **Active Recall Flashcards** | • **3D Perspective Flip**: Interactive 3D flip-card decks (`rotationY`) with question/hint on front and answer on back.<br/>• **Mastery Analytics**: Track mastery progress percentage per subject with one-tap status toggles.<br/>• **Subject Filtering**: Filter decks by subject (Mathematics, Physics, CS, Chemistry, etc.). |
-| 🧠 **Focus Brain Dump** | • **Distraction Shield**: Instantly jot down off-topic thoughts or urgent to-dos mid-study without interrupting timer or leaving focus screen.<br/>• **Thought Log**: Time-stamped thought list with checkboxes to review and clear completed items. |
-| 🌌 **Immersive Focus** | • **Full-Screen Focus Mode**: Streamlined OLED dark canvas with flip-clock aesthetics and quick Brain Dump access.<br/>• **Anti-Burn-In Protection**: Subtle pixel shifting for OLED displays.<br/>• **Wake-Lock Management**: Keeps the screen awake during active deep work blocks. |
-| 📚 **Subjects & Topics** | • **Hierarchical Organization**: Organize sessions by subject and granular sub-topics.<br/>• **Custom Aesthetics**: Associate custom Material symbols and hex color palettes.<br/>• **Target Velocity**: Set target hours per subject and monitor progress rings. |
-| 📊 **Analytics & Heatmap** | • **Multi-Period Filtering**: Aggregate data across Today, Yesterday, This Week, Last Week, This Month, Last Month, This Year, and All Time.<br/>• **16-Week Heatmap Grid**: Visual GitHub-style activity grid measuring daily study intensity.<br/>• **Focus Score ($0 - 100$)**: Algorithmic score evaluating productivity ratings, pause ratio, and distraction rates.<br/>• **Shareable PNG Performance Card**: Export high-contrast social cards or formatted text reports in one tap. |
-| 🏆 **Habits & Badges** | • **Streak Engine**: Daily active streak counter with longest streak milestones.<br/>• **Unlockable Achievements**: Earn milestone badges (First Step, 10-Hour Club, Night Owl, Weekend Warrior, Consistency Champion). |
-| 📅 **History & Calendar** | • **Monthly Heatmap Calendar**: Interactive calendar view detailing study volume per day.<br/>• **Session Inspector**: Searchable session history log with detailed metrics and notes. |
-| 🛡️ **Data Portability** | • **Full JSON Backup & Restore**: One-tap backup with clipboard paste integration.<br/>• **CSV Spreadsheet Export**: Export raw data formatted for Microsoft Excel, Google Sheets, and Notion. |
-| 🎨 **UI & Customization** | • **Material Design 3**: Dynamic color matching Android 12+ wallpaper palettes.<br/>• **Study Reminders**: Customizable daily reminders with weekday/weekend repeat schedules.<br/>• **Edge-to-Edge Experience**: Modern floating navigation bar with responsive tactile haptics. |
+| ⏱️ Timer Engine | Countdown, stopwatch, and Pomodoro modes with flexible presets, session logging, and precise timing control. |
+| 📈 Analytics | 16-week heatmap, daily/weekly/monthly summaries, hourly focus curves, focus score intelligence, and streak tracking. |
+| 🧠 Active Recall | 3D flip-card study decks, mastery progression, performance analytics, and repeat-optimized learning loops. |
+| 📝 Brain Dump | Capture distracting thoughts instantly while staying in your focus flow. |
+| 🌙 Focus Mode | Full-screen AMOLED-friendly focus view with unobtrusive controls and anti-burn-in behavior. |
+| 📚 Subjects & Topics | Organize study by subjects, subtopics, color, icons, and targets. |
+| 🏆 Habit System | Daily streaks, milestones, badges, and unlockable achievements. |
+| 📅 History | Searchable session log, monthly calendar, exportable data, and contextual session review. |
+| 🛡️ Data Portability | Full JSON backup, clipboard integration, and CSV export for Excel, Sheets, and analysis tools. |
+| 🎨 Personalization | Material Design 3 dynamic theming, custom reminders, and aesthetic subject customization. |
+| 🔊 Audio Support | Ambient white noise and soundscapes to reduce environmental distraction. |
+| 🔌 App-to-App Integration | Daynexa session sharing via provider + broadcast contracts on-device. |
 
 ---
 
@@ -88,7 +144,7 @@ Modern productivity apps are often bloated with mandatory sign-ins, intrusive pu
 
 | Dashboard & Goal | Active Focus Timer | Immersive OLED Mode |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/dashboard.svg" width="230" alt="Dashboard Screen" /> | <img src="docs/screenshots/timer.svg" width="230" alt="Timer Screen" /> | <img src="docs/screenshots/fullscreen_focus.svg" width="230" alt="Full Screen Focus" /> |
+| <img src="docs/screenshots/dashboard.svg" width="230" alt="Dashboard Screen" /> | <img src="docs/screenshots/timer.svg" width="230" alt="Timer Screen" /> | <img src="docs/screenshots/fullscreen_focus.svg" width="230" alt="Fullscreen Focus Screen" /> |
 
 | Multi-Period Analytics | Study Heatmap & History | Subjects & Targets |
 | :---: | :---: | :---: |
@@ -101,31 +157,35 @@ Modern productivity apps are often bloated with mandatory sign-ins, intrusive pu
 ## 📥 Download Focentra
 
 ### Latest APK Release
-You can obtain the latest pre-compiled Android APK directly from this repository:
 
-| Release Method | Location | Compatibility | Direct Link |
+You can download the latest Android APK directly from the official release channel:
+
+| Release Method | Location | Compatibility | Link |
 | :--- | :--- | :--- | :--- |
-| **Official GitHub Release (v8.0.0)** | GitHub Releases Tab | Android 7.0+ (API 24+) | [**Releases Page**](https://github.com/craftplex/Focentra/releases) |
-| **Automated Build (GitHub Actions)** | GitHub Actions Tab | Android 7.0+ (API 24+) | [**Actions Artifacts**](https://github.com/craftplex/Focentra/actions) |
+| Official GitHub Release | GitHub Releases | Android 7.0+ (API 24+) | [Releases Page](https://github.com/craftplex/Focentra/releases) |
+| Automated CI Build | GitHub Actions Artifacts | Android 7.0+ (API 24+) | [Actions Artifacts](https://github.com/craftplex/Focentra/actions) |
 
 ### Installation Guide
-1. Go to [**GitHub Releases**](https://github.com/craftplex/Focentra/releases) or the [**GitHub Actions**](https://github.com/craftplex/Focentra/actions) tab.
-2. Download the APK file (`focentra-v8.0.0-release.apk` or `focentra-debug-apk`).
-3. Open your device's **Downloads** folder and tap the APK file.
-4. If prompted, enable **"Install unknown apps"** in your Android Settings.
-5. Tap **Install** and launch **Focentra**.
+
+1. Go to [GitHub Releases](https://github.com/craftplex/Focentra/releases) or the [GitHub Actions](https://github.com/craftplex/Focentra/actions) tab.
+2. Download the APK file (`focentra-v8.0.0-release.apk` or a debug artifact).
+3. Open your device’s Downloads folder and tap the APK.
+4. If prompted, enable “Install unknown apps” in Android settings.
+5. Install and launch Focentra.
+
+> Tip: If you’re testing a debug build, make sure your device allows app installs from unknown sources.
 
 ---
 
 ## 🔌 Daynexa Integration (API v1)
 
-Focentra provides native, privacy-preserving App-to-App interoperability with **Daynexa** via a dedicated Android `ContentProvider` (Pull) and a secure `Broadcast` system (Push). This integration allows Daynexa to synchronize completed study session records entirely on-device without cloud synchronization or external networks.
+Focentra supports a secure, privacy-preserving app-to-app integration with Daynexa via a local Android ContentProvider and a broadcast-based session completion signal.
 
 ```text
 ┌────────────────────────┐      Local IPC / Binder      ┌────────────────────────┐
 │        DAYNEXA         │ ───────────────────────────> │        FOCENTRA        │
-│   (Companion App)      │  content://com.focentra.     │  DaynexaSessions       │
-│                        │       provider/sessions      │     Provider (v1)      │
+│   Companion App        │  content://com.focentra.     │  DaynexaSessions       │
+│                        │       provider/sessions      │      Provider (v1)     │
 └────────────────────────┘                              └───────────┬────────────┘
             ▲                                                       │
             │           Secure Broadcast (Push)            User Consent Check
@@ -134,42 +194,43 @@ Focentra provides native, privacy-preserving App-to-App interoperability with **
                                                                     ▼
                                                         ┌────────────────────────┐
                                                         │  Room SQLite Database  │
-                                                        │   (study_sessions)     │
+                                                        │      study_sessions    │
                                                         └────────────────────────┘
 ```
 
-### 📋 Integration Contract Specifications
+### Integration Contract
 
-| Specification | Value | Description |
+| Specification | Value |
+| :--- | :--- |
+| API Version | `1` |
+| Provider Authority | `com.focentra.provider` |
+| Sessions Endpoint | `content://com.focentra.provider/sessions` |
+| Single Item Endpoint | `content://com.focentra.provider/sessions/#` |
+| Broadcast Action | `com.focentra.ACTION_SESSION_COMPLETED` |
+| Security Permission | `com.focentra.permission.READ_SESSIONS` |
+| Access Mode | Read-only |
+
+### Exposed Session Schema
+
+| Column / Key | Type | Purpose |
 | :--- | :--- | :--- |
-| **API Version** | `1` | Daynexa Integration API Schema v1 |
-| **Provider Authority** | `com.focentra.provider` | Android ContentProvider Authority |
-| **Sessions Endpoint** | `content://com.focentra.provider/sessions` | Directory query returning all study sessions |
-| **Single Item Endpoint** | `content://com.focentra.provider/sessions/#` | Query single session record by primary ID |
-| **Broadcast Action** | `com.focentra.ACTION_SESSION_COMPLETED` | Push event sent upon session completion |
-| **Secure Permission** | `com.focentra.permission.READ_SESSIONS` | Required permission for Provider access & Broadcast reception |
-| **Access Mode** | **Strictly Read-Only** | Mutation operations (`insert`, `update`, `delete`) are blocked |
+| `sessionId` | `Long` | Unique session identifier |
+| `subject` | `String` | Subject label |
+| `topic` | `String` | Topic or subtopic |
+| `startTime` | `Long` | Start timestamp in epoch ms |
+| `endTime` | `Long` | End timestamp in epoch ms |
+| `duration` | `Long` / `Int` | Focused study duration in minutes |
+| `completionStatus` | `String` | `COMPLETED`, `EARLY_FINISH`, or `CANCELLED` |
+| `focusScore` | `Int` | Algorithmic focus score from `0-100` |
+| `schemaVersion` | `Int` | API schema version |
 
-### 🗃️ Exposed Session Data Schema (v1)
+### Security & Consent Control
 
-| Column Name / Key | Data Type | Description |
-| :--- | :--- | :--- |
-| `sessionId` | `Long` | Unique primary key of the study session |
-| `subject` | `String` | Associated subject name (e.g., Mathematics, Computer Science) |
-| `topic` | `String` | Specific sub-topic studied (e.g., Calculus, Machine Learning) |
-| `startTime` | `Long` | Start timestamp in epoch milliseconds |
-| `endTime` | `Long` | End timestamp in epoch milliseconds |
-| `duration` | `Long` / `Int` | Total focused duration in whole minutes |
-| `completionStatus` | `String` | Status: `COMPLETED`, `EARLY_FINISH`, or `CANCELLED` |
-| `focusScore` | `Int` | Algorithmic session focus score ($0 - 100$) |
-| `schemaVersion` | `Int` | Constant schema version identifier (`1`) |
-
-### 🛡️ Security & User Consent Control
-- **User Consent Gate**: Both the Provider and the Broadcast system validate that the user explicitly authorized Daynexa integration under **Settings > INTEGRATIONS > Daynexa**. If disabled, queries return empty sets and no broadcasts are sent.
-- **Read-Only Protection**: The ContentProvider rejects any attempted insertions, deletions, or updates with `UnsupportedOperationException`.
-- **Broadcast Security**: The completion broadcast is sent with the `com.focentra.permission.READ_SESSIONS` permission. Only apps declaring this permission in their manifest can receive the event, preventing data leakage to unauthorized third parties.
-- **Duplicate Protection**: Use the persistent `sessionId` as a unique identifier to ensure idempotent synchronization between Pull (Provider) and Push (Broadcast) events.
-- **Zero Cloud Exposure**: All data exchanges occur strictly in-memory via Android Binder IPC on the local device.
+- User consent must be enabled under Settings → Integrations → Daynexa.
+- Provider and broadcast endpoints are read-only.
+- Inserts, updates, and deletes are rejected.
+- Broadcast delivery is permission-gated using `com.focentra.permission.READ_SESSIONS`.
+- Data never leaves the device and is shared only through local Android IPC mechanisms.
 
 ---
 
@@ -179,89 +240,74 @@ Focentra provides native, privacy-preserving App-to-App interoperability with **
 ┌─────────────────────────────────────────────────────────────┐
 │                 FOCENTRA PRIVACY CONTRACT                   │
 ├─────────────────────────────────────────────────────────────┤
-│  ✓  NO Account or Login Required                            │
-│  ✓  NO Cloud Database Synchronization                       │
-│  ✓  NO Analytics SDKs, Ad Networks, or Third-Party Trackers │
-│  ✓  NO AI, LLMs, or Server-Side Processing                  │
-│  ✓  NO Background Data Transmissions                        │
-│  ✓  100% of your notes, metrics, and timers stay on-device  │
+│  ✓  No account or login required                           │
+│  ✓  No cloud synchronization                               │
+│  ✓  No analytics SDKs or ad networks                       │
+│  ✓  No AI, server processing, or remote tracking           │
+│  ✓  No background data transmissions                      │
+│  ✓  100% of your notes, metrics, and timers stay local     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Your data is stored exclusively inside your device's sandboxed SQLite database via AndroidX Room. You maintain total ownership of your study history and can export it as raw JSON or CSV at any time.
+All data is stored in a local SQLite database managed by AndroidX Room. You own your study history completely and can export it as JSON or CSV at any moment.
 
 ---
 
 ## 🏛️ Project Architecture
 
-Focentra is engineered following **Clean Architecture**, **MVVM (Model-View-ViewModel)**, and **Unidirectional Data Flow (UDF)** principles.
+Focentra is built using Clean Architecture, MVVM, and unidirectional data flow principles.
 
 ### Architecture Flow Diagram
 
-```text
-               ┌───────────────────────────────┐
-               │    JETPACK COMPOSE UI LAYER   │
-               │  (Dashboard, Timer, Focus,    │
-               │   Analytics, Calendar, Notes) │
-               └───────────────┬───────────────┘
-                               │ StateFlow<UiState>
-                               │ Events / User Intents
-                               ▼
-               ┌───────────────────────────────┐
-               │        VIEWMODEL LAYER        │
-               │   (MainViewModel Coordinator) │
-               └───────┬───────────────┬───────┘
-                       │               │
-       ┌───────────────▼─┐           ┌─▼───────────────┐
-       │ DOMAIN ENGINES  │           │   BG SERVICE    │
-       │• StatisticsEngine           │• StudyTimerSvc  │
-       │• TimerEngine    │           │• WhiteNoisePlay │
-       └───────┬─────────┘           └─────────────────┘
-               │
-               ▼
-       ┌───────────────────────────────────────────────┐
-       │               STUDY REPOSITORY                │
-       └───────┬───────────────────────────────┬───────┘
-               │                               │
-               ▼                               ▼
-       ┌─────────────────┐           ┌─────────────────┐
-       │   ROOM SQLITE   │           │    DATASTORE    │
-       │(Sessions, Subj) │           │ (Settings, Pref)│
-       └─────────────────┘           └─────────────────┘
+```mermaid
+flowchart TD
+    A[Jetpack Compose UI Layer
+    Dashboard, Timer, Focus, Analytics, Calendar, Notes] --> B[ViewModel Layer
+    MainViewModel Coordinator]
+    B --> C[Domain Engines
+    StatisticsEngine
+    TimerEngine]
+    B --> D[Background Service
+    StudyTimerService
+    WhiteNoisePlayer]
+    C --> E[Study Repository]
+    D --> E
+    E --> F[Room SQLite Database]
+    E --> G[DataStore Preferences]
 ```
 
 ### Layer Breakdown
 
-1. **Presentation Layer (`com.niloy.focentra.ui`)**:
-   - 100% declarative UI built with Jetpack Compose and Material 3.
-   - Distinct screens for Dashboard, Active Timer, Full-Screen AMOLED Focus, Analytics, Calendar History, Subjects, Achievements, and Settings.
-2. **State & Orchestration Layer (`com.niloy.focentra.viewmodel`)**:
-   - `MainViewModel` observes asynchronous Kotlin `Flow` streams and exposes immutable `StateFlow` state to Composables.
-3. **Domain Engines (`com.niloy.focentra.engine`)**:
-   - **`StatisticsEngine`**: High-performance mathematical engine calculating Focus Scores ($0-100$), multi-period aggregations, 16-week GitHub-style heatmap matrices, and 24-hour concentration curves.
-   - **`TimerEngine`**: Deterministic state machine governing Countdown, Stopwatch, and Pomodoro phase transitions.
-4. **Service & Background Layer (`com.niloy.focentra.service`)**:
-   - **`StudyTimerService`**: Android Foreground Service ensuring zero battery-killer termination during active study.
-   - **`WhiteNoisePlayer`**: Low-latency ambient audio soundscape engine.
-5. **Data & Storage Layer (`com.niloy.focentra.data`)**:
-   - **`StudyRepository`**: Orchestrator bridging DAOs, DataStore, and business logic.
-   - **`AppDatabase`**: AndroidX Room SQLite database managing relational entities with transactional safety.
+1. Presentation Layer (`com.niloy.focentra.ui`)
+   - Jetpack Compose + Material 3 UI
+   - Dashboard, timer, analytics, calendar, subjects, achievements, settings
+2. State & Orchestration Layer (`com.niloy.focentra.viewmodel`)
+   - `MainViewModel` exposes immutable reactive state via `StateFlow`
+3. Domain Engines (`com.niloy.focentra.engine`)
+   - `StatisticsEngine` generates focus scores, heatmaps, and multi-period summaries
+   - `TimerEngine` manages countdown, stopwatch, and Pomodoro transitions
+4. Service & Background Layer (`com.niloy.focentra.service`)
+   - Foreground service keeps sessions running reliably in the background
+   - Ambient white noise system runs with low-latency playback
+5. Data & Storage Layer (`com.niloy.focentra.data`)
+   - `StudyRepository` orchestrates DAOs, DataStore, and business logic
+   - `AppDatabase` stores app state using Room SQLite
 
-> 📖 *For a comprehensive technical deep-dive, consult [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).*
+> For deeper technical documentation, check the architecture guide: [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
 
 ---
 
 ## 💻 Tech Stack & Libraries
 
-- **Language**: [Kotlin 2.0+](https://kotlinlang.org/) (Coroutines, Flow, Serialization)
-- **UI Toolkit**: [Jetpack Compose](https://developer.android.com/jetpack/compose) with [Material Design 3](https://m3.material.io/)
-- **Architecture**: MVVM, Clean Architecture, Unidirectional Data Flow
-- **Local Database**: [AndroidX Room 2.6+](https://developer.android.com/training/data-storage/room) with SQLite
-- **Dependency Processing**: [KSP (Kotlin Symbol Processing)](https://kotlinlang.org/docs/ksp-overview.html)
-- **Background Execution**: Android Foreground Service (`StudyTimerService`) & `WakeLock`
-- **Preferences**: [AndroidX DataStore Preferences](https://developer.android.com/topic/libraries/architecture/datastore)
-- **Serialization**: [Moshi](https://github.com/square/moshi) & `org.json`
-- **Unit Testing**: JUnit 4, Robolectric, Kotlinx Coroutines Test, Roborazzi
+- Kotlin 2.0+
+- Jetpack Compose + Material Design 3
+- MVVM + Clean Architecture + UDF
+- AndroidX Room 2.6+ with SQLite
+- KSP (Kotlin Symbol Processing)
+- DataStore Preferences
+- Coroutines + Flow
+- Moshi + org.json
+- JUnit 4, Robolectric, Kotlinx Coroutines Test, Roborazzi
 
 ---
 
@@ -269,160 +315,162 @@ Focentra is engineered following **Clean Architecture**, **MVVM (Model-View-View
 
 ```text
 Room Database: "focentra_study_db"
-├── study_sessions     (Session durations, paused seconds, productivity rating, distractions, notes, mood)
-├── subjects           (Custom subjects, color hex values, icon identifiers, target hours)
-├── topics             (Sub-topics mapped to parent subjects)
-├── timer_presets      (Custom countdown & pomodoro presets)
-├── reminders          (Daily study alarm configurations and repeat days)
-└── achievements       (Unlocked milestone records and timestamps)
+├── study_sessions     (Session timing, productivity rating, pauses, notes, mood)
+├── subjects           (Subject names, color codes, icons, target hours)
+├── topics             (Sub-topics associated with subjects)
+├── timer_presets      (Custom countdown and Pomodoro presets)
+├── reminders          (Daily reminder schedules and repeat days)
+├── achievements       (Unlocked milestones and timestamps)
+└── settings           (App preferences and user configuration)
 ```
 
 ---
 
 ## 🔄 Backup, Import & Export
 
-Focentra provides full data portability under **Settings > Data & Backup**:
+Focentra includes full data portability under Settings → Data & Backup:
 
-1. **Full JSON Backup**: Generates an immutable snapshot containing all sessions, subjects, topics, and presets. Restorable via direct file import or pasting JSON strings from your clipboard.
-2. **Universal CSV Spreadsheet Export**: Formats study history into clean comma-separated values compatible with **Microsoft Excel**, **Google Sheets**, and **Notion**.
+1. Full JSON backup for all sessions, subjects, and app data
+2. Clipboard-based import/export support
+3. CSV export for spreadsheet analysis in Excel, Google Sheets, or Notion
+4. Exportable daily progress data for offline reporting and personal review
 
 ---
 
 ## 🛠️ Setup Instructions for Developers
 
 ### Workstation Prerequisites
-- **JDK**: Java Development Kit 17 (Temurin recommended)
-- **Android Studio**: Android Studio Ladybug (2024.2.1) or newer
-- **Android SDK**: Android API Level 36 (Minimum SDK 24, Target SDK 36)
-- **Git**: Version 2.30+
+
+- JDK 17 (Temurin recommended)
+- Android Studio Ladybug (2024.2.1+) or newer
+- Android SDK with API level 36
+- Minimum SDK: 24
+- Git 2.30+
 
 ### Cloning and Building
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/Niloy-Track-Dev/Focentra.git
-   cd Focentra
-   ```
+```bash
+git clone https://github.com/craftplex/Focentra.git
+cd Focentra
+cp .env.example .env
+```
 
-2. **Set up environment configuration**:
-   ```bash
-   cp .env.example .env
-   ```
+#### Build debug APK
 
-3. **Build the project via Gradle**:
-   ```bash
-   # Mac/Linux
-   ./gradlew assembleDebug
+```bash
+# macOS / Linux
+./gradlew assembleDebug
 
-   # Windows
-   .\gradlew.bat assembleDebug
-   ```
+# Windows
+./gradlew.bat assembleDebug
+```
 
-4. **Run Unit Tests**:
-   ```bash
-   # Mac/Linux
-   ./gradlew testDebugUnitTest
+#### Run unit tests
 
-   # Windows
-   .\gradlew.bat testDebugUnitTest
-   ```
+```bash
+# macOS / Linux
+./gradlew testDebugUnitTest
+
+# Windows
+./gradlew.bat testDebugUnitTest
+```
 
 ---
 
 ## 🧪 Testing & Quality Assurance
 
 ```bash
-# Execute standard JVM unit tests
 gradle testDebugUnitTest
-
-# Run tests with stacktrace
 gradle testDebugUnitTest --stacktrace
 ```
 
-Test coverage focuses on:
-- **`StatisticsEngineTest`**: Period boundary calculations, focus score formulation, and streak verification.
-- **`TimerEngineTest`**: Countdown state machines and pause tracking.
-- **`StudyRepositoryTest`**: JSON import deserialization and CSV format generation.
+Coverage focuses on:
+
+- `StatisticsEngineTest`: focus score logic, streak validation, and boundary behavior
+- `TimerEngineTest`: countdown transitions and pause tracking
+- `StudyRepositoryTest`: backup restore, CSV generation, and deserialization validation
 
 ---
 
 ## 🤖 GitHub Actions & CI/CD Pipeline
 
-The repository is equipped with automated CI/CD workflows:
+The repository includes automated build and validation workflows:
 
-- **`.github/workflows/android-ci.yml`**: Automatically triggers on pushes and pull requests to `main` and `develop`. Validates compilation and executes unit tests.
-- **`.github/workflows/build-release-apk.yml`**: Automatically builds, signs, and packages the release APK, and attaches it directly to GitHub Releases.
+- `.github/workflows/android-ci.yml`: compiles the project and runs unit tests on push and PR
+- `.github/workflows/build-release-apk.yml`: builds signed APKs and attaches them to releases
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **v1.0.0 - Core Launch**: Countdown, Stopwatch, and Pomodoro timer modes.
-- [x] **v1.0.0 - Advanced Analytics**: 16-week study heatmap, Focus Score, and hourly breakdown.
-- [x] **v1.0.0 - Soundscapes & OLED Mode**: Ambient audio player and full-screen flip clock.
-- [x] **v1.0.0 - Data Portability**: Full JSON backup/restore and CSV spreadsheet exporter.
-- [x] **v1.2.1 - Active Recall Flashcards**: 3D interactive flip cards with mastery progress tracking.
-- [x] **v1.2.1 - Focus Brain Dump**: Instant distraction shield & thought pad mid-study.
-- [x] **v1.2.1 - Performance Card Exporter**: One-tap shareable PNG performance card generation.
-- [x] **v1.3.1 - UI Polishing**: Removed persistent Home FAB to declutter the dashboard, fixed Flashcards alignment padding, and improved AppBar semantics.
-- [ ] **v1.4.0 - Glance AppWidget**: Home-screen study widget for one-tap timer launches.
-- [ ] **v2.0.0 - Wear OS Module**: Standalone Wear OS companion app.
+- [x] v1.0.0 — Core timer modes: Countdown, Stopwatch, Pomodoro
+- [x] v1.0.0 — Advanced analytics: heatmap, focus summaries, streaks
+- [x] v1.0.0 — Soundscapes and OLED focus mode
+- [x] v1.0.0 — Data portability and JSON/CSV export
+- [x] v1.2.1 — Active recall flashcards
+- [x] v1.2.1 — Focus brain dump and distraction shield
+- [x] v1.2.1 — Shareable performance card export
+- [x] v1.3.1 — UI polish and interaction refinements
+- [ ] v1.4.0 — Glance AppWidget
+- [ ] v2.0.0 — Wear OS companion app
 
-> 🗺️ *See [`ROADMAP.md`](ROADMAP.md) for upcoming milestones and ideas.*
+> See [ROADMAP.md](ROADMAP.md) for more details.
 
 ---
 
 ## 📝 Changelog
 
-Detailed release notes and historical changes are maintained in [`CHANGELOG.md`](CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) for the full release history and notes.
 
 ---
 
 ## 🐛 Reporting Issues & Feature Requests
 
-- **Bug Reports**: Open an issue using our [Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md).
-- **Feature Requests**: Propose ideas using our [Feature Request Template](.github/ISSUE_TEMPLATE/feature_request.md).
-- **Security Inquiries**: Please review our [Security Policy](SECURITY.md) for responsible private disclosure.
+- Bug reports: [Issue template](.github/ISSUE_TEMPLATE/bug_report.md)
+- Feature requests: [Feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+- Security disclosure: [SECURITY.md](SECURITY.md)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions of all kinds are welcome!
+Contributions are welcome.
 
-1. Read our [Code of Conduct](CODE_OF_CONDUCT.md).
-2. Check out the [Contributing Guide](CONTRIBUTING.md) for branch naming conventions and coding standards.
-3. Submit a Pull Request using our [PR Template](.github/pull_request_template.md).
+1. Read the [Code of Conduct](CODE_OF_CONDUCT.md)
+2. Review the [Contributing Guide](CONTRIBUTING.md)
+3. Open a PR using the repository template
 
 ---
 
 ## 📄 License
 
-Focentra is released as open-source software under the permissive **[MIT License](LICENSE)**.
+Focentra is licensed under the [MIT License](LICENSE).
 
 ---
 
 ## 👨‍💻 Author & Developer
 
 **Niloy Mitra**  
-Student Developer & Aspiring Software Engineer  
-GitHub: [@Niloy-Track-Dev](https://github.com/Niloy-Track-Dev) • Email: `niloymitra889@gmail.com`
+Student Developer & Software Engineer  
+GitHub: [@Niloy-Track-Dev](https://github.com/Niloy-Track-Dev)  
+Email: `niloymitra889@gmail.com`
 
 ---
 
 ## 📬 Contact & Community
 
-- **Project Repository**: [https://github.com/Niloy-Track-Dev/Focentra](https://github.com/Niloy-Track-Dev/Focentra)
-- **Bug Reports & Issues**: [GitHub Issues](https://github.com/Niloy-Track-Dev/Focentra/issues)
-- **Community Discussions**: [GitHub Discussions](https://github.com/Niloy-Track-Dev/Focentra/discussions)
-- **Developer Email**: `niloymitra889@gmail.com`
+- Repository: [craftplex/Focentra](https://github.com/craftplex/Focentra)
+- Releases: [GitHub Releases](https://github.com/craftplex/Focentra/releases)
+- Issues: [GitHub Issues](https://github.com/craftplex/Focentra/issues)
+- Discussions: [GitHub Discussions](https://github.com/craftplex/Focentra/discussions)
+- Email: `niloymitra889@gmail.com`
 
 ---
 
 <div align="center">
 
-*Built with ❤️ and Kotlin for focused learners worldwide.*
+<p><strong>Built with ❤️ and Kotlin for focused learners everywhere.</strong></p>
 
-**[⬆ Back to Top](#-table-of-contents)**
+<a href="#-table-of-contents">⬆ Back to Top</a>
 
 </div>

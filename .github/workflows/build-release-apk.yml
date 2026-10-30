@@ -35,6 +35,9 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
       - name: Prepare Release Keystore & Signing Credentials
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -46,7 +49,7 @@ jobs:
             echo "::error::Release signing secrets are not fully configured. Refusing to publish an APK with a new signing key."
             exit 1
           fi
-          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > release-keystore.jks || [ ! -s release-keystore.jks ]; then
+          if ! echo "$KEYSTORE_BASE64" | base64 --decode > release-keystore.jks || [ ! -s release-keystore.jks ]; then
             echo "::error::KEYSTORE_BASE64 is invalid or decoded to an empty file."
             exit 1
           fi
@@ -83,7 +86,7 @@ jobs:
       - name: Extract App Version Name
         id: get_version
         run: |
-          VERSION=$(grep "versionName" app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*["\x27]([^"\x27]+)["\x27].*/\1/')
           if [ -z "$VERSION" ]; then
             VERSION="1.1.0"
           fi

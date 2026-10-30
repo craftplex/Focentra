@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.Calendar
 
 private fun android.util.JsonWriter.writeJsonValue(jsonValue: Any?) {
@@ -58,48 +59,51 @@ internal fun encodeCsvRecord(fields: List<String>): String =
 
 internal fun parseCsvRecords(csv: String): List<List<String>> {
     val records = mutableListOf<List<String>>()
-    val record = mutableListOf<String>()
-    val field = StringBuilder()
+    val currentRecord = mutableListOf<String>()
+    val currentField = StringBuilder()
     var inQuotes = false
     var index = 0
 
     while (index < csv.length) {
-        val character = csv[index]
+        val ch = csv[index]
         when {
-            character == '"' && inQuotes && index + 1 < csv.length && csv[index + 1] == '"' -> {
-                field.append('"')
+            ch == '"' && inQuotes && index + 1 < csv.length && csv[index + 1] == '"' -> {
+                currentField.append('"')
                 index += 2
                 continue
             }
-            character == '"' -> inQuotes = !inQuotes
-            character == ',' && !inQuotes -> {
-                record.add(field.toString())
-                field.clear()
+            ch == '"' -> {
+                inQuotes = !inQuotes
             }
-            (character == '\n' || character == '\r') && !inQuotes -> {
-                record.add(field.toString())
-                field.clear()
-                records.add(record.toList())
-                record.clear()
-                if (character == '\r' && index + 1 < csv.length && csv[index + 1] == '\n') {
+            ch == ',' && !inQuotes -> {
+                currentRecord.add(currentField.toString())
+                currentField.clear()
+            }
+            (ch == '\n' || ch == '\r') && !inQuotes -> {
+                currentRecord.add(currentField.toString())
+                currentField.clear()
+                records.add(currentRecord.toList())
+                currentRecord.clear()
+
+                if (ch == '\r' && index + 1 < csv.length && csv[index + 1] == '\n') {
                     index++
                 }
             }
-            else -> field.append(character)
+            else -> currentField.append(ch)
         }
         index++
     }
 
     require(!inQuotes) { "Unterminated quoted CSV field." }
-    if (record.isNotEmpty() || field.isNotEmpty()) {
-        record.add(field.toString())
-        records.add(record)
+    if (currentRecord.isNotEmpty() || currentField.isNotEmpty()) {
+        currentRecord.add(currentField.toString())
+        records.add(currentRecord.toList())
     }
+
     return records
 }
 
 class StudyRepository(private val database: AppDatabase, context: Context) {
-    
     private val appContext = context.applicationContext
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -116,6 +120,9 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     val allNotifications: Flow<List<NotificationEntity>> = database.notificationDao().getAllNotificationsFlow()
     val allRevisionSkips: Flow<List<RevisionSkipEntity>> = database.revisionSkipDao().getAllSkipsFlow()
 
+    // -------------------------
+    // Notifications
+    // -------------------------
     suspend fun insertNotification(notification: NotificationEntity) = withContext(Dispatchers.IO) {
         database.notificationDao().insertNotification(notification)
     }
@@ -132,13 +139,17 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.notificationDao().clearAllNotifications()
     }
 
+    // -------------------------
+    // Revision skips
+    // -------------------------
     suspend fun insertRevisionSkip(skip: RevisionSkipEntity) = withContext(Dispatchers.IO) {
         database.revisionSkipDao().insertSkip(skip)
     }
 
-    suspend fun getSkipCountForChapter(subjectName: String, chapterName: String): Int = withContext(Dispatchers.IO) {
-        database.revisionSkipDao().getSkipCountForChapter(subjectName, chapterName)
-    }
+    suspend fun getSkipCountForChapter(subjectName: String, chapterName: String): Int =
+        withContext(Dispatchers.IO) {
+            database.revisionSkipDao().getSkipCountForChapter(subjectName, chapterName)
+        }
 
     suspend fun deleteRevisionSkip(skip: RevisionSkipEntity) = withContext(Dispatchers.IO) {
         database.revisionSkipDao().deleteSkip(skip)
@@ -148,8 +159,10 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.revisionSkipDao().clearAllSkips()
     }
 
+    // -------------------------
+    // Syllabus seeding
+    // -------------------------
     suspend fun ensureBanglaSyllabusSeeded() = withContext(Dispatchers.IO) {
-        // First, clean up duplicate subjects in Room DB if any exist
         deduplicateSubjectsInternal()
 
         val existingSubjects = database.subjectDao().getAllSubjects()
@@ -429,7 +442,9 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         )
 
         syllabiToSeed.forEach { syllabus ->
-            val existing = existingSubjects.find { it.name.trim().equals(syllabus.name.trim(), ignoreCase = true) }
+            val existing = existingSubjects.find {
+                it.name.trim().equals(syllabus.name.trim(), ignoreCase = true)
+            }
             if (existing == null) {
                 val subjectId = database.subjectDao().insertSubject(
                     SubjectEntity(
@@ -440,6 +455,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                         description = syllabus.description
                     )
                 )
+
                 syllabus.chapters.forEachIndexed { index, title ->
                     database.chapterDao().insertChapter(
                         ChapterEntity(
@@ -459,26 +475,27 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     private suspend fun deduplicateSubjectsInternal() {
         val allSubjects = database.subjectDao().getAllSubjects()
         val grouped = allSubjects.groupBy { it.name.trim().lowercase() }
+
         grouped.forEach { (_, subjects) ->
             if (subjects.size > 1) {
-                // Keep the one with lowest ID (original entry)
                 val sorted = subjects.sortedBy { it.id }
-                val keepSubject = sorted.first()
+                val keep = sorted.first()
                 val duplicates = sorted.drop(1)
 
                 val allChapters = database.chapterDao().getAllChaptersFlow().first()
                 val allTopics = database.topicDao().getAllTopics()
 
                 duplicates.forEach { dup ->
-                    // Reassign chapters from duplicate to original
-                    allChapters.filter { it.subjectId == dup.id }.forEach { ch ->
-                        database.chapterDao().insertChapter(ch.copy(subjectId = keepSubject.id, subjectName = keepSubject.name))
+                    allChapters.filter { it.subjectId == dup.id }.forEach { chapter ->
+                        database.chapterDao().insertChapter(
+                            chapter.copy(subjectId = keep.id, subjectName = keep.name)
+                        )
                     }
-                    // Reassign topics from duplicate to original
-                    allTopics.filter { it.subjectId == dup.id }.forEach { tp ->
-                        database.topicDao().insertTopic(tp.copy(subjectId = keepSubject.id, subjectName = keepSubject.name))
+                    allTopics.filter { it.subjectId == dup.id }.forEach { topic ->
+                        database.topicDao().insertTopic(
+                            topic.copy(subjectId = keep.id, subjectName = keep.name)
+                        )
                     }
-                    // Delete duplicate subject
                     database.subjectDao().deleteSubject(dup)
                 }
             }
@@ -489,6 +506,9 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         deduplicateSubjectsInternal()
     }
 
+    // -------------------------
+    // CRUD - Chapter / Task / Session
+    // -------------------------
     suspend fun insertChapter(chapter: ChapterEntity): Long = withContext(Dispatchers.IO) {
         database.chapterDao().insertChapter(chapter)
     }
@@ -528,38 +548,30 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     private fun sendDaynexaSessionBroadcast(session: StudySessionEntity) {
         repositoryScope.launch {
             try {
-                // 1. Verify User Consent Gate
                 val consent = database.settingDao().getSettingValue(DaynexaContract.SETTING_DAYNEXA_CONSENT)
                 if (consent.equals("true", ignoreCase = true)) {
-                    
-                    // 2. Map to Daynexa Integration API v1 Contract
                     val intent = Intent(DaynexaContract.ACTION_SESSION_COMPLETED).apply {
                         putExtra(DaynexaContract.COLUMN_SESSION_ID, session.id)
                         putExtra(DaynexaContract.COLUMN_SUBJECT, session.subject)
                         putExtra(DaynexaContract.COLUMN_TOPIC, session.topic)
                         putExtra(DaynexaContract.COLUMN_START_TIME, session.startTime)
                         putExtra(DaynexaContract.COLUMN_END_TIME, session.endTime)
-                        
+
                         val durationMin = if (session.actualFocusedSeconds > 0) {
                             (session.actualFocusedSeconds / 60).coerceAtLeast(1)
                         } else {
                             (session.durationSeconds / 60).coerceAtLeast(1)
                         }
+
                         putExtra(DaynexaContract.COLUMN_DURATION, durationMin)
                         putExtra(DaynexaContract.COLUMN_COMPLETION_STATUS, session.completionStatus.uppercase())
-                        
-                        val focusScore = DaynexaIntegrationHelper.calculateFocusScore(session)
-                        putExtra(DaynexaContract.COLUMN_FOCUS_SCORE, focusScore)
+                        putExtra(DaynexaContract.COLUMN_FOCUS_SCORE, DaynexaIntegrationHelper.calculateFocusScore(session))
                         putExtra(DaynexaContract.COLUMN_SCHEMA_VERSION, DaynexaContract.SCHEMA_VERSION)
                     }
 
-                    // 3. SECURE BROADCAST: Use permission protection
-                    // Only apps that declare com.focentra.permission.READ_SESSIONS in their manifest can receive this.
-                    // This prevents data leakage to unauthorized apps.
                     appContext.sendBroadcast(intent, "com.focentra.permission.READ_SESSIONS")
                 }
             } catch (e: Exception) {
-                // Silently fail integration broadcasts to avoid breaking core app flow
                 e.printStackTrace()
             }
         }
@@ -592,11 +604,14 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.sessionDao().getAllSessions()
     }
 
-    suspend fun getSessionsBetween(start: Long, end: Long): List<StudySessionEntity> = withContext(Dispatchers.IO) {
-        database.sessionDao().getSessionsBetween(start, end)
-    }
+    suspend fun getSessionsBetween(start: Long, end: Long): List<StudySessionEntity> =
+        withContext(Dispatchers.IO) {
+            database.sessionDao().getSessionsBetween(start, end)
+        }
 
-    // Subjects
+    // -------------------------
+    // Subject / Topic / Goal / Preset / Reminder
+    // -------------------------
     suspend fun insertSubject(subject: SubjectEntity): Long = withContext(Dispatchers.IO) {
         database.subjectDao().insertSubject(subject)
     }
@@ -605,6 +620,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.withTransaction {
             val existingSubject = database.subjectDao().getSubjectById(subject.id)
             database.subjectDao().updateSubject(subject)
+
             if (existingSubject != null && existingSubject.name != subject.name) {
                 database.topicDao().updateSubjectName(subject.id, subject.name)
                 database.chapterDao().updateSubjectName(subject.id, subject.name)
@@ -623,7 +639,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         }
     }
 
-    // Topics
     suspend fun insertTopic(topic: TopicEntity): Long = withContext(Dispatchers.IO) {
         database.topicDao().insertTopic(topic)
     }
@@ -632,7 +647,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.topicDao().deleteTopic(topic)
     }
 
-    // Goals
     suspend fun insertGoal(goal: StudyGoalEntity) = withContext(Dispatchers.IO) {
         database.goalDao().insertGoal(goal)
     }
@@ -641,7 +655,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.goalDao().updateGoal(goal)
     }
 
-    // Presets
     suspend fun insertPreset(preset: PresetEntity): Long = withContext(Dispatchers.IO) {
         database.presetDao().insertPreset(preset)
     }
@@ -654,7 +667,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.presetDao().deletePreset(preset)
     }
 
-    // Reminders
     suspend fun insertReminder(reminder: ReminderEntity): Long = withContext(Dispatchers.IO) {
         database.reminderDao().insertReminder(reminder)
     }
@@ -667,7 +679,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.reminderDao().deleteReminder(reminder)
     }
 
-    // Settings
     suspend fun getSetting(key: String, default: String = ""): String = withContext(Dispatchers.IO) {
         database.settingDao().getSettingValue(key) ?: default
     }
@@ -676,7 +687,9 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         database.settingDao().setSetting(SettingEntity(key, value))
     }
 
+    // -------------------------
     // Achievement evaluation
+    // -------------------------
     suspend fun checkAndUnlockAchievements() = withContext(Dispatchers.IO) {
         val sessions = database.sessionDao().getAllSessions()
         val totalFocusedSeconds = sessions.sumOf { it.actualFocusedSeconds }
@@ -777,7 +790,9 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         }
     }
 
-    // JSON Export / Import v2 (Full App State Backup)
+    // -------------------------
+    // JSON export/import
+    // -------------------------
     suspend fun exportDataJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
         root.put("app", "Focentra")
@@ -859,6 +874,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         val presetsArray = JSONArray()
         database.presetDao().getAllPresets().forEach { p ->
             val obj = JSONObject()
+            obj.put("id", p.id)
             obj.put("title", p.title)
             obj.put("type", p.type)
             obj.put("durationMinutes", p.durationMinutes)
@@ -879,6 +895,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         val goalsArray = JSONArray()
         database.goalDao().getAllGoals().forEach { g ->
             val obj = JSONObject()
+            obj.put("id", g.id)
             obj.put("periodType", g.periodType)
             obj.put("targetMinutes", g.targetMinutes)
             obj.put("subjectFilter", g.subjectFilter)
@@ -890,6 +907,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         val remindersArray = JSONArray()
         database.reminderDao().getAllReminders().forEach { r ->
             val obj = JSONObject()
+            obj.put("id", r.id)
             obj.put("title", r.title)
             obj.put("hour", r.hour)
             obj.put("minute", r.minute)
@@ -900,7 +918,6 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         }
         root.put("reminders", remindersArray)
 
-        // Include Flashcards and Exam Targets stored in settings
         val flashcardsJson = getSetting("flashcards_json", "")
         root.put("flashcards", if (flashcardsJson.isBlank()) JSONArray() else JSONArray(flashcardsJson))
 
@@ -910,510 +927,455 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         root.toString()
     }
 
-    suspend fun exportDataJsonStream(outputStream: java.io.OutputStream) = withContext(Dispatchers.IO) {
+    suspend fun exportDataJsonStream(outputStream: OutputStream) = withContext(Dispatchers.IO) {
         val writer = android.util.JsonWriter(outputStream.bufferedWriter(Charsets.UTF_8))
-        writer.use { jWriter ->
-            jWriter.beginObject()
-            jWriter.name("app").value("Focentra")
-            jWriter.name("version").value(2)
-            jWriter.name("exportedAt").value(System.currentTimeMillis())
+        writer.use { jsonWriter ->
+            jsonWriter.beginObject()
+            jsonWriter.name("app").value("Focentra")
+            jsonWriter.name("version").value(2)
+            jsonWriter.name("exportedAt").value(System.currentTimeMillis())
 
-            jWriter.name("sessions")
-            jWriter.beginArray()
+            jsonWriter.name("sessions")
+            jsonWriter.beginArray()
             database.sessionDao().getAllSessions().forEach { s ->
-                jWriter.beginObject()
-                jWriter.name("id").value(s.id)
-                jWriter.name("startTime").value(s.startTime)
-                jWriter.name("endTime").value(s.endTime)
-                jWriter.name("durationSeconds").value(s.durationSeconds)
-                jWriter.name("actualFocusedSeconds").value(s.actualFocusedSeconds)
-                jWriter.name("pausedSeconds").value(s.pausedSeconds)
-                jWriter.name("sessionType").value(s.sessionType)
-                jWriter.name("subject").value(s.subject)
-                jWriter.name("topic").value(s.topic)
-                jWriter.name("category").value(s.category)
-                jWriter.name("goal").value(s.goal)
-                jWriter.name("notes").value(s.notes)
-                jWriter.name("tags").value(s.tags)
-                jWriter.name("productivityRating").value(s.productivityRating)
-                jWriter.name("distractionCount").value(s.distractionCount)
-                jWriter.name("distractionDetails").value(s.distractionDetails)
-                jWriter.name("mood").value(s.mood)
-                jWriter.name("energyLevel").value(s.energyLevel)
-                jWriter.name("location").value(s.location)
-                jWriter.name("completionStatus").value(s.completionStatus)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(s.id)
+                jsonWriter.name("startTime").value(s.startTime)
+                jsonWriter.name("endTime").value(s.endTime)
+                jsonWriter.name("durationSeconds").value(s.durationSeconds)
+                jsonWriter.name("actualFocusedSeconds").value(s.actualFocusedSeconds)
+                jsonWriter.name("pausedSeconds").value(s.pausedSeconds)
+                jsonWriter.name("sessionType").value(s.sessionType)
+                jsonWriter.name("subject").value(s.subject)
+                jsonWriter.name("topic").value(s.topic)
+                jsonWriter.name("category").value(s.category)
+                jsonWriter.name("goal").value(s.goal)
+                jsonWriter.name("notes").value(s.notes)
+                jsonWriter.name("tags").value(s.tags)
+                jsonWriter.name("productivityRating").value(s.productivityRating)
+                jsonWriter.name("distractionCount").value(s.distractionCount)
+                jsonWriter.name("distractionDetails").value(s.distractionDetails)
+                jsonWriter.name("mood").value(s.mood)
+                jsonWriter.name("energyLevel").value(s.energyLevel)
+                jsonWriter.name("location").value(s.location)
+                jsonWriter.name("completionStatus").value(s.completionStatus)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("subjects")
-            jWriter.beginArray()
+            jsonWriter.name("subjects")
+            jsonWriter.beginArray()
             database.subjectDao().getAllSubjects().forEach { s ->
-                jWriter.beginObject()
-                jWriter.name("id").value(s.id)
-                jWriter.name("name").value(s.name)
-                jWriter.name("colorHex").value(s.colorHex)
-                jWriter.name("iconName").value(s.iconName)
-                jWriter.name("targetHours").value(s.targetHours.toDouble())
-                jWriter.name("description").value(s.description)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(s.id)
+                jsonWriter.name("name").value(s.name)
+                jsonWriter.name("colorHex").value(s.colorHex)
+                jsonWriter.name("iconName").value(s.iconName)
+                jsonWriter.name("targetHours").value(s.targetHours.toDouble())
+                jsonWriter.name("description").value(s.description)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("topics")
-            jWriter.beginArray()
+            jsonWriter.name("topics")
+            jsonWriter.beginArray()
             database.topicDao().getAllTopics().forEach { t ->
-                jWriter.beginObject()
-                jWriter.name("id").value(t.id)
-                jWriter.name("subjectId").value(t.subjectId)
-                jWriter.name("subjectName").value(t.subjectName)
-                jWriter.name("name").value(t.name)
-                jWriter.name("description").value(t.description)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(t.id)
+                jsonWriter.name("subjectId").value(t.subjectId)
+                jsonWriter.name("subjectName").value(t.subjectName)
+                jsonWriter.name("name").value(t.name)
+                jsonWriter.name("description").value(t.description)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("chapters")
-            jWriter.beginArray()
+            jsonWriter.name("chapters")
+            jsonWriter.beginArray()
             database.chapterDao().getAllChaptersFlow().first().forEach { chapter ->
-                jWriter.beginObject()
-                jWriter.name("id").value(chapter.id)
-                jWriter.name("subjectId").value(chapter.subjectId)
-                jWriter.name("subjectName").value(chapter.subjectName)
-                jWriter.name("chapterName").value(chapter.chapterName)
-                jWriter.name("tapCount").value(chapter.tapCount)
-                jWriter.name("status").value(chapter.status)
-                jWriter.name("lastStudiedTimestamp").value(chapter.lastStudiedTimestamp)
-                jWriter.name("completedTimestamp").value(chapter.completedTimestamp)
-                jWriter.name("totalClasses").value(chapter.totalClasses)
-                jWriter.name("completedClassesCount").value(chapter.completedClassesCount)
-                jWriter.name("isRevision1Completed").value(chapter.isRevision1Completed)
-                jWriter.name("isRevision2Completed").value(chapter.isRevision2Completed)
-                jWriter.name("orderIndex").value(chapter.orderIndex)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(chapter.id)
+                jsonWriter.name("subjectId").value(chapter.subjectId)
+                jsonWriter.name("subjectName").value(chapter.subjectName)
+                jsonWriter.name("chapterName").value(chapter.chapterName)
+                jsonWriter.name("tapCount").value(chapter.tapCount)
+                jsonWriter.name("status").value(chapter.status)
+                jsonWriter.name("lastStudiedTimestamp").value(chapter.lastStudiedTimestamp)
+                jsonWriter.name("completedTimestamp").value(chapter.completedTimestamp)
+                jsonWriter.name("totalClasses").value(chapter.totalClasses)
+                jsonWriter.name("completedClassesCount").value(chapter.completedClassesCount)
+                jsonWriter.name("isRevision1Completed").value(chapter.isRevision1Completed)
+                jsonWriter.name("isRevision2Completed").value(chapter.isRevision2Completed)
+                jsonWriter.name("orderIndex").value(chapter.orderIndex)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("presets")
-            jWriter.beginArray()
+            jsonWriter.name("presets")
+            jsonWriter.beginArray()
             database.presetDao().getAllPresets().forEach { p ->
-                jWriter.beginObject()
-                jWriter.name("title").value(p.title)
-                jWriter.name("type").value(p.type)
-                jWriter.name("durationMinutes").value(p.durationMinutes)
-                jWriter.name("subject").value(p.subject)
-                jWriter.name("topic").value(p.topic)
-                jWriter.name("pomodoroFocusMin").value(p.pomodoroFocusMin)
-                jWriter.name("pomodoroShortBreakMin").value(p.pomodoroShortBreakMin)
-                jWriter.name("pomodoroLongBreakMin").value(p.pomodoroLongBreakMin)
-                jWriter.name("pomodoroRounds").value(p.pomodoroRounds)
-                jWriter.name("soundEnabled").value(p.soundEnabled)
-                jWriter.name("vibrateEnabled").value(p.vibrateEnabled)
-                jWriter.name("keepScreenAwake").value(p.keepScreenAwake)
-                jWriter.name("tags").value(p.tags)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(p.id)
+                jsonWriter.name("title").value(p.title)
+                jsonWriter.name("type").value(p.type)
+                jsonWriter.name("durationMinutes").value(p.durationMinutes)
+                jsonWriter.name("subject").value(p.subject)
+                jsonWriter.name("topic").value(p.topic)
+                jsonWriter.name("pomodoroFocusMin").value(p.pomodoroFocusMin)
+                jsonWriter.name("pomodoroShortBreakMin").value(p.pomodoroShortBreakMin)
+                jsonWriter.name("pomodoroLongBreakMin").value(p.pomodoroLongBreakMin)
+                jsonWriter.name("pomodoroRounds").value(p.pomodoroRounds)
+                jsonWriter.name("soundEnabled").value(p.soundEnabled)
+                jsonWriter.name("vibrateEnabled").value(p.vibrateEnabled)
+                jsonWriter.name("keepScreenAwake").value(p.keepScreenAwake)
+                jsonWriter.name("tags").value(p.tags)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("goals")
-            jWriter.beginArray()
+            jsonWriter.name("goals")
+            jsonWriter.beginArray()
             database.goalDao().getAllGoals().forEach { g ->
-                jWriter.beginObject()
-                jWriter.name("periodType").value(g.periodType)
-                jWriter.name("targetMinutes").value(g.targetMinutes)
-                jWriter.name("subjectFilter").value(g.subjectFilter)
-                jWriter.name("active").value(g.active)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(g.id)
+                jsonWriter.name("periodType").value(g.periodType)
+                jsonWriter.name("targetMinutes").value(g.targetMinutes)
+                jsonWriter.name("subjectFilter").value(g.subjectFilter)
+                jsonWriter.name("active").value(g.active)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
-            jWriter.name("reminders")
-            jWriter.beginArray()
+            jsonWriter.name("reminders")
+            jsonWriter.beginArray()
             database.reminderDao().getAllReminders().forEach { r ->
-                jWriter.beginObject()
-                jWriter.name("title").value(r.title)
-                jWriter.name("hour").value(r.hour)
-                jWriter.name("minute").value(r.minute)
-                jWriter.name("daysOfWeek").value(r.daysOfWeek)
-                jWriter.name("enabled").value(r.enabled)
-                jWriter.name("message").value(r.message)
-                jWriter.endObject()
+                jsonWriter.beginObject()
+                jsonWriter.name("id").value(r.id)
+                jsonWriter.name("title").value(r.title)
+                jsonWriter.name("hour").value(r.hour)
+                jsonWriter.name("minute").value(r.minute)
+                jsonWriter.name("daysOfWeek").value(r.daysOfWeek)
+                jsonWriter.name("enabled").value(r.enabled)
+                jsonWriter.name("message").value(r.message)
+                jsonWriter.endObject()
             }
-            jWriter.endArray()
+            jsonWriter.endArray()
 
             val flashcardsJson = getSetting("flashcards_json", "")
-            val flashcards = if (flashcardsJson.isBlank()) JSONArray() else JSONArray(flashcardsJson)
-            jWriter.name("flashcards")
-            jWriter.writeJsonValue(flashcards)
+            jsonWriter.name("flashcards")
+            if (flashcardsJson.isBlank()) {
+                jsonWriter.beginArray()
+                jsonWriter.endArray()
+            } else {
+                jsonWriter.jsonValue(JSONArray(flashcardsJson).toString())
+            }
 
             val examTargetsJson = getSetting("exam_targets_json", "")
-            val targets = if (examTargetsJson.isBlank()) JSONArray() else JSONArray(examTargetsJson)
-            jWriter.name("examTargets")
-            jWriter.beginArray()
-            for (index in 0 until targets.length()) {
-                val target = targets.getJSONObject(index)
-                jWriter.beginObject()
-                jWriter.name("id").value(target.optString("id"))
-                jWriter.name("title").value(target.optString("title"))
-                jWriter.name("targetDateEpochMs").value(target.optLong("targetDateEpochMs"))
-                jWriter.name("targetHours").value(target.optDouble("targetHours", 50.0))
-                jWriter.name("subject").value(target.optString("subject", "General"))
-                jWriter.name("notes").value(target.optString("notes"))
-                jWriter.endObject()
+            jsonWriter.name("examTargets")
+            if (examTargetsJson.isBlank()) {
+                jsonWriter.beginArray()
+                jsonWriter.endArray()
+            } else {
+                jsonWriter.jsonValue(JSONArray(examTargetsJson).toString())
             }
-            jWriter.endArray()
 
-            jWriter.endObject()
+            jsonWriter.endObject()
         }
     }
 
+    suspend fun importDataJson(json: String, replaceExisting: Boolean = false): Boolean =
+        withContext(Dispatchers.IO) {
+            if (json.isBlank()) return@withContext false
+            try {
+                val root = JSONObject(json)
+                val sessions = root.optJSONArray("sessions") ?: JSONArray()
+                val subjects = root.optJSONArray("subjects") ?: JSONArray()
+                val topics = root.optJSONArray("topics") ?: JSONArray()
+                val chapters = root.optJSONArray("chapters") ?: JSONArray()
+                val presets = root.optJSONArray("presets") ?: JSONArray()
+                val goals = root.optJSONArray("goals") ?: JSONArray()
+                val reminders = root.optJSONArray("reminders") ?: JSONArray()
+                val flashcards = root.optJSONArray("flashcards") ?: JSONArray()
+                val examTargets = root.optJSONArray("examTargets") ?: JSONArray()
+
+                database.withTransaction {
+                    if (replaceExisting) {
+                        database.sessionDao().clearAllSessions()
+                        database.subjectDao().clearAllSubjects()
+                        database.topicDao().clearAllTopics()
+                        database.chapterDao().clearAllChapters()
+                        database.presetDao().clearAllPresets()
+                        database.goalDao().clearAllGoals()
+                        database.reminderDao().clearAllReminders()
+                    }
+
+                    for (i in 0 until subjects.length()) {
+                        val obj = subjects.getJSONObject(i)
+                        database.subjectDao().insertSubject(
+                            SubjectEntity(
+                                id = obj.optLong("id", 0L),
+                                name = obj.optString("name", ""),
+                                colorHex = obj.optString("colorHex", "#6366F1"),
+                                iconName = obj.optString("iconName", "School"),
+                                targetHours = obj.optDouble("targetHours", 0.0).toFloat(),
+                                description = obj.optString("description", "")
+                            )
+                        )
+                    }
+
+                    for (i in 0 until topics.length()) {
+                        val obj = topics.getJSONObject(i)
+                        database.topicDao().insertTopic(
+                            TopicEntity(
+                                id = obj.optLong("id", 0L),
+                                subjectId = obj.optLong("subjectId", 0L),
+                                subjectName = obj.optString("subjectName", ""),
+                                name = obj.optString("name", ""),
+                                description = obj.optString("description", "")
+                            )
+                        )
+                    }
+
+                    for (i in 0 until chapters.length()) {
+                        val obj = chapters.getJSONObject(i)
+                        database.chapterDao().insertChapter(
+                            ChapterEntity(
+                                id = obj.optLong("id", 0L),
+                                subjectId = obj.optLong("subjectId", 0L),
+                                subjectName = obj.optString("subjectName", ""),
+                                chapterName = obj.optString("chapterName", ""),
+                                tapCount = obj.optInt("tapCount", 0),
+                                status = obj.optString("status", "Not Started"),
+                                lastStudiedTimestamp = obj.optLong("lastStudiedTimestamp", 0L),
+                                completedTimestamp = obj.optLong("completedTimestamp", 0L),
+                                totalClasses = obj.optInt("totalClasses", 0),
+                                completedClassesCount = obj.optInt("completedClassesCount", 0),
+                                isRevision1Completed = obj.optBoolean("isRevision1Completed", false),
+                                isRevision2Completed = obj.optBoolean("isRevision2Completed", false),
+                                orderIndex = obj.optInt("orderIndex", 0)
+                            )
+                        )
+                    }
+
+                    for (i in 0 until presets.length()) {
+                        val obj = presets.getJSONObject(i)
+                        database.presetDao().insertPreset(
+                            PresetEntity(
+                                id = obj.optLong("id", 0L),
+                                title = obj.optString("title", ""),
+                                type = obj.optString("type", "COUNTDOWN"),
+                                durationMinutes = obj.optInt("durationMinutes", 25),
+                                subject = obj.optString("subject", "General Study"),
+                                topic = obj.optString("topic", ""),
+                                pomodoroFocusMin = obj.optInt("pomodoroFocusMin", 25),
+                                pomodoroShortBreakMin = obj.optInt("pomodoroShortBreakMin", 5),
+                                pomodoroLongBreakMin = obj.optInt("pomodoroLongBreakMin", 15),
+                                pomodoroRounds = obj.optInt("pomodoroRounds", 4),
+                                soundEnabled = obj.optBoolean("soundEnabled", true),
+                                vibrateEnabled = obj.optBoolean("vibrateEnabled", true),
+                                keepScreenAwake = obj.optBoolean("keepScreenAwake", true),
+                                tags = obj.optString("tags", "")
+                            )
+                        )
+                    }
+
+                    for (i in 0 until goals.length()) {
+                        val obj = goals.getJSONObject(i)
+                        database.goalDao().insertGoal(
+                            StudyGoalEntity(
+                                id = obj.optLong("id", 0L),
+                                periodType = obj.optString("periodType", "DAILY"),
+                                targetMinutes = obj.optInt("targetMinutes", 480),
+                                subjectFilter = obj.optString("subjectFilter", ""),
+                                active = obj.optBoolean("active", true)
+                            )
+                        )
+                    }
+
+                    for (i in 0 until reminders.length()) {
+                        val obj = reminders.getJSONObject(i)
+                        database.reminderDao().insertReminder(
+                            ReminderEntity(
+                                id = obj.optLong("id", 0L),
+                                title = obj.optString("title", ""),
+                                hour = obj.optInt("hour", 9),
+                                minute = obj.optInt("minute", 0),
+                                daysOfWeek = obj.optString("daysOfWeek", "Mon,Tue,Wed,Thu,Fri,Sat,Sun"),
+                                enabled = obj.optBoolean("enabled", true),
+                                message = obj.optString("message", "")
+                            )
+                        )
+                    }
+
+                    for (i in 0 until sessions.length()) {
+                        val obj = sessions.getJSONObject(i)
+                        database.sessionDao().insertSession(
+                            StudySessionEntity(
+                                id = obj.optLong("id", 0L),
+                                startTime = obj.optLong("startTime", System.currentTimeMillis()),
+                                endTime = obj.optLong("endTime", System.currentTimeMillis()),
+                                durationSeconds = obj.optLong("durationSeconds", 0L),
+                                actualFocusedSeconds = obj.optLong("actualFocusedSeconds", 0L),
+                                pausedSeconds = obj.optLong("pausedSeconds", 0L),
+                                sessionType = obj.optString("sessionType", "COUNTDOWN"),
+                                subject = obj.optString("subject", "General Study"),
+                                topic = obj.optString("topic", ""),
+                                category = obj.optString("category", ""),
+                                goal = obj.optString("goal", ""),
+                                notes = obj.optString("notes", ""),
+                                tags = obj.optString("tags", ""),
+                                productivityRating = obj.optInt("productivityRating", 0),
+                                distractionCount = obj.optInt("distractionCount", 0),
+                                distractionDetails = obj.optString("distractionDetails", ""),
+                                mood = obj.optString("mood", ""),
+                                energyLevel = obj.optString("energyLevel", ""),
+                                location = obj.optString("location", ""),
+                                completionStatus = obj.optString("completionStatus", "COMPLETED"),
+                                targetId = obj.optString("targetId", ""),
+                                createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                            )
+                        )
+                    }
+
+                    if (flashcards.length() > 0) {
+                        setSetting("flashcards_json", flashcards.toString())
+                    }
+                    if (examTargets.length() > 0) {
+                        setSetting("exam_targets_json", examTargets.toString())
+                    }
+                }
+
+                true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+
+    suspend fun importDataJsonStream(inputStream: InputStream, replaceExisting: Boolean = false): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val text = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                importDataJson(text, replaceExisting)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+
+    // --------------------------------------
+    // CSV export/import
+    // --------------------------------------
     suspend fun exportSessionsCsv(): String = withContext(Dispatchers.IO) {
-        val sessions = database.sessionDao().getAllSessions()
-        val sb = StringBuilder()
-        sb.append(
-            encodeCsvRecord(
-                listOf(
-                    "ID", "Start Time", "End Time", "Total Duration (s)", "Focused Duration (s)",
-                    "Paused Duration (s)", "Type", "Subject", "Topic", "Productivity",
-                    "Distractions", "Mood", "Energy", "Notes"
-                )
+        val rows = database.sessionDao().getAllSessions()
+        val header = listOf(
+            "id",
+            "startTime",
+            "endTime",
+            "durationSeconds",
+            "actualFocusedSeconds",
+            "pausedSeconds",
+            "sessionType",
+            "subject",
+            "topic",
+            "category",
+            "goal",
+            "notes",
+            "tags",
+            "productivityRating",
+            "distractionCount",
+            "distractionDetails",
+            "mood",
+            "energyLevel",
+            "location",
+            "completionStatus"
+        )
+
+        val csvRows = mutableListOf<String>()
+        csvRows += encodeCsvRecord(header)
+        rows.forEach { s ->
+            val values = listOf(
+                s.id.toString(),
+                s.startTime.toString(),
+                s.endTime.toString(),
+                s.durationSeconds.toString(),
+                s.actualFocusedSeconds.toString(),
+                s.pausedSeconds.toString(),
+                s.sessionType,
+                s.subject,
+                s.topic,
+                s.category,
+                s.goal,
+                s.notes,
+                s.tags,
+                s.productivityRating.toString(),
+                s.distractionCount.toString(),
+                s.distractionDetails,
+                s.mood,
+                s.energyLevel,
+                s.location,
+                s.completionStatus
             )
-        ).append('\n')
-        sessions.forEach { s ->
-            sb.append(
-                encodeCsvRecord(
-                    listOf(
-                        s.id.toString(),
-                        s.startTime.toString(),
-                        s.endTime.toString(),
-                        s.durationSeconds.toString(),
-                        s.actualFocusedSeconds.toString(),
-                        s.pausedSeconds.toString(),
-                        s.sessionType,
-                        s.subject,
-                        s.topic,
-                        s.productivityRating.toString(),
-                        s.distractionCount.toString(),
-                        s.mood,
-                        s.energyLevel,
-                        s.notes
-                    )
-                )
-            ).append('\n')
+            csvRows += encodeCsvRecord(values)
         }
-        sb.toString()
+
+        csvRows.joinToString("\n")
     }
 
-    suspend fun importDataJson(jsonString: String, replaceExisting: Boolean): Boolean = withContext(Dispatchers.IO) {
+    suspend fun importSessionsCsvStream(
+        inputStream: InputStream,
+        replaceExisting: Boolean = false
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val trimmed = jsonString.trim()
-            if (trimmed.isEmpty()) return@withContext false
+            val csv = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val rows = parseCsvRecords(csv)
+            if (rows.isEmpty()) return@withContext false
 
-            val rootObject = if (trimmed.startsWith("{")) JSONObject(trimmed) else null
-            val rootArray = if (trimmed.startsWith("[")) JSONArray(trimmed) else null
-            if (rootObject == null && rootArray == null) return@withContext false
-            if (rootObject != null) {
-                val supportedArrayNames = listOf(
-                    "sessions", "subjects", "topics", "presets", "goals", "reminders",
-                    "flashcards", "examTargets", "chapters"
-                )
-                val hasSessionFields = rootObject.has("startTime") ||
-                    rootObject.has("subject") || rootObject.has("durationSeconds")
-                if (!hasSessionFields && supportedArrayNames.none(rootObject::has)) {
-                    return@withContext false
-                }
-                if (supportedArrayNames.any { name ->
-                        rootObject.has(name) &&
-                            rootObject.optJSONArray(name) == null &&
-                            !(name == "examTargets" && rootObject.opt(name) is String)
-                    }
-                ) {
-                    return@withContext false
-                }
-                (supportedArrayNames - "flashcards").forEach { name ->
-                    val array = rootObject.optJSONArray(name)
-                        ?: if (name == "examTargets" && rootObject.opt(name) is String) {
-                            JSONArray(rootObject.getString(name))
-                        } else {
-                            null
-                        }
-                    if (array != null) {
-                        for (index in 0 until array.length()) {
-                            array.getJSONObject(index)
-                        }
-                    }
-                }
-            }
-            rootArray?.let { array ->
-                for (i in 0 until array.length()) {
-                    array.getJSONObject(i)
-                }
-            }
+            val header = rows.first().map { it.trim() }
+            val dataRows = rows.drop(1)
+
+            if (header.isEmpty() || dataRows.isEmpty()) return@withContext false
+
+            val indexMap = header.withIndex().associate { (idx, name) -> name to idx }
 
             database.withTransaction {
                 if (replaceExisting) {
                     database.sessionDao().clearAllSessions()
-                    if (rootObject?.has("subjects") == true) {
-                        database.subjectDao().clearAllSubjects()
-                        database.topicDao().clearAllTopics()
-                        database.chapterDao().deleteAllChapters()
-                    }
-                    if (rootObject?.has("topics") == true) database.topicDao().clearAllTopics()
-                    if (rootObject?.has("chapters") == true) database.chapterDao().deleteAllChapters()
-                    if (rootObject?.has("presets") == true) database.presetDao().clearAllPresets()
-                    if (rootObject?.has("goals") == true) database.goalDao().clearAllGoals()
-                    if (rootObject?.has("reminders") == true) database.reminderDao().clearAllReminders()
                 }
 
-                val sessionList = mutableListOf<StudySessionEntity>()
+                dataRows.forEach { values ->
+                    if (values.size < header.size) return@forEach
 
-            fun parseSessionObject(obj: JSONObject): StudySessionEntity {
-                val sTime = obj.optLong("startTime", System.currentTimeMillis())
-                val dur = obj.optLong("durationSeconds", obj.optLong("actualFocusedSeconds", 1500L))
-                val actDur = obj.optLong("actualFocusedSeconds", dur)
-                val eTime = obj.optLong("endTime", sTime + (actDur * 1000L))
+                    val map = header.indices.associate { i -> header[i] to values.getOrElse(i) { "" } }
 
-                return StudySessionEntity(
-                    id = if (replaceExisting) obj.optLong("id", 0L) else 0L,
-                    startTime = sTime,
-                    endTime = eTime,
-                    durationSeconds = dur,
-                    actualFocusedSeconds = actDur,
-                    pausedSeconds = obj.optLong("pausedSeconds", 0L),
-                    sessionType = obj.optString("sessionType", "COUNTDOWN"),
-                    subject = obj.optString("subject", "General"),
-                    topic = obj.optString("topic", ""),
-                    category = obj.optString("category", "Study"),
-                    goal = obj.optString("goal", ""),
-                    notes = obj.optString("notes", ""),
-                    tags = obj.optString("tags", ""),
-                    productivityRating = obj.optInt("productivityRating", 4).coerceIn(1, 5),
-                    distractionCount = obj.optInt("distractionCount", 0),
-                    distractionDetails = obj.optString("distractionDetails", ""),
-                    mood = obj.optString("mood", "GOOD"),
-                    energyLevel = obj.optString("energyLevel", "HIGH"),
-                    location = obj.optString("location", "Desk"),
-                    completionStatus = obj.optString("completionStatus", "COMPLETED")
-                )
+                    val item = StudySessionEntity(
+                        id = map["id"]?.toLongOrNull() ?: 0L,
+                        startTime = map["startTime"]?.toLongOrNull() ?: System.currentTimeMillis(),
+                        endTime = map["endTime"]?.toLongOrNull() ?: System.currentTimeMillis(),
+                        durationSeconds = map["durationSeconds"]?.toLongOrNull() ?: 0L,
+                        actualFocusedSeconds = map["actualFocusedSeconds"]?.toLongOrNull() ?: 0L,
+                        pausedSeconds = map["pausedSeconds"]?.toLongOrNull() ?: 0L,
+                        sessionType = map["sessionType"] ?: "COUNTDOWN",
+                        subject = map["subject"] ?: "General Study",
+                        topic = map["topic"] ?: "",
+                        category = map["category"] ?: "",
+                        goal = map["goal"] ?: "",
+                        notes = map["notes"] ?: "",
+                        tags = map["tags"] ?: "",
+                        productivityRating = map["productivityRating"]?.toIntOrNull() ?: 0,
+                        distractionCount = map["distractionCount"]?.toIntOrNull() ?: 0,
+                        distractionDetails = map["distractionDetails"] ?: "",
+                        mood = map["mood"] ?: "",
+                        energyLevel = map["energyLevel"] ?: "",
+                        location = map["location"] ?: "",
+                        completionStatus = map["completionStatus"] ?: "COMPLETED",
+                        targetId = map["targetId"] ?: "",
+                        createdAt = System.currentTimeMillis()
+                    )
+                    database.sessionDao().insertSession(item)
+                }
             }
 
-                if (trimmed.startsWith("{")) {
-                val root = JSONObject(trimmed)
-                val importedSubjectIds = mutableMapOf<Long, Long>()
-                val existingSubjects = database.subjectDao().getAllSubjects().toMutableList()
-                if (root.has("sessions")) {
-                    val sessionsArray = root.getJSONArray("sessions")
-                    for (i in 0 until sessionsArray.length()) {
-                        val obj = sessionsArray.getJSONObject(i)
-                        sessionList.add(parseSessionObject(obj))
-                    }
-                } else if (root.has("startTime") || root.has("subject") || root.has("durationSeconds")) {
-                    // Single session object
-                    sessionList.add(parseSessionObject(root))
-                }
-
-                // Restore subjects if present
-                if (root.has("subjects")) {
-                    val subjectsArray = root.getJSONArray("subjects")
-                    for (i in 0 until subjectsArray.length()) {
-                        val obj = subjectsArray.getJSONObject(i)
-                        val sName = obj.optString("name", "")
-                        if (sName.isNotBlank()) {
-                            val existing = existingSubjects.firstOrNull {
-                                it.name.equals(sName, ignoreCase = true)
-                            }
-                            val importedId = existing?.id ?: database.subjectDao().insertSubject(
-                                SubjectEntity(
-                                    name = sName,
-                                    colorHex = obj.optString("colorHex", "#6366F1"),
-                                    iconName = obj.optString("iconName", "School"),
-                                    targetHours = obj.optDouble("targetHours", 0.0).toFloat(),
-                                    description = obj.optString("description", "")
-                                )
-                            )
-                            if (existing == null) {
-                                existingSubjects.add(
-                                    SubjectEntity(
-                                        id = importedId,
-                                        name = sName,
-                                        colorHex = obj.optString("colorHex", "#6366F1"),
-                                        iconName = obj.optString("iconName", "School"),
-                                        targetHours = obj.optDouble("targetHours", 0.0).toFloat(),
-                                        description = obj.optString("description", "")
-                                    )
-                                )
-                            }
-                            val sourceId = obj.optLong("id", 0L)
-                            if (sourceId > 0L) importedSubjectIds[sourceId] = importedId
-                        }
-                    }
-                }
-
-                // Restore topics if present
-                if (root.has("topics")) {
-                    val topicsArray = root.getJSONArray("topics")
-                    for (i in 0 until topicsArray.length()) {
-                        val obj = topicsArray.getJSONObject(i)
-                        val tName = obj.optString("name", "")
-                        val sName = obj.optString("subjectName", "General")
-                        if (tName.isNotBlank()) {
-                            val sourceSubjectId = obj.optLong("subjectId", 0L)
-                            val subjectId = importedSubjectIds[sourceSubjectId]
-                                ?: existingSubjects.firstOrNull { it.name.equals(sName, ignoreCase = true) }?.id
-                                ?: sourceSubjectId
-                            database.topicDao().insertTopic(
-                                TopicEntity(
-                                    subjectId = subjectId,
-                                    subjectName = sName,
-                                    name = tName,
-                                    description = obj.optString("description", "")
-                                )
-                            )
-                        }
-                    }
-                }
-
-                if (root.has("chapters")) {
-                    val chaptersArray = root.getJSONArray("chapters")
-                    val existingChapters = database.chapterDao().getAllChaptersFlow().first()
-                    for (i in 0 until chaptersArray.length()) {
-                        val obj = chaptersArray.getJSONObject(i)
-                        val subjectName = obj.optString("subjectName", "General")
-                        val sourceSubjectId = obj.optLong("subjectId", 0L)
-                        val subjectId = importedSubjectIds[sourceSubjectId]
-                            ?: existingSubjects.firstOrNull {
-                                it.name.equals(subjectName, ignoreCase = true)
-                            }?.id ?: sourceSubjectId
-                        val chapterName = obj.optString("chapterName", "")
-                        if (chapterName.isBlank()) continue
-                        val existing = existingChapters.firstOrNull {
-                            it.subjectId == subjectId && it.chapterName == chapterName
-                        }
-                        val chapter = ChapterEntity(
-                            id = existing?.id ?: 0L,
-                            subjectId = subjectId,
-                            subjectName = subjectName,
-                            chapterName = chapterName,
-                            tapCount = obj.optInt("tapCount", 0),
-                            status = obj.optString("status", "পড়া শুরু হয় নাই"),
-                            lastStudiedTimestamp = obj.optLong("lastStudiedTimestamp", 0L),
-                            completedTimestamp = obj.optLong("completedTimestamp", 0L),
-                            totalClasses = obj.optInt("totalClasses", 10),
-                            completedClassesCount = obj.optInt("completedClassesCount", 0),
-                            isRevision1Completed = obj.optBoolean("isRevision1Completed", false),
-                            isRevision2Completed = obj.optBoolean("isRevision2Completed", false),
-                            orderIndex = obj.optInt("orderIndex", 0)
-                        )
-                        if (existing == null) {
-                            database.chapterDao().insertChapter(chapter)
-                        } else {
-                            database.chapterDao().updateChapter(chapter)
-                        }
-                    }
-                }
-
-                // Restore presets if present
-                if (root.has("presets")) {
-                    val presetsArray = root.getJSONArray("presets")
-                    for (i in 0 until presetsArray.length()) {
-                        val obj = presetsArray.getJSONObject(i)
-                        val title = obj.optString("title", "")
-                        if (title.isNotBlank()) {
-                            database.presetDao().insertPreset(
-                                PresetEntity(
-                                    title = title,
-                                    type = obj.optString("type", "COUNTDOWN"),
-                                    durationMinutes = obj.optInt("durationMinutes", 25),
-                                    subject = obj.optString("subject", "General"),
-                                    topic = obj.optString("topic", ""),
-                                    pomodoroFocusMin = obj.optInt("pomodoroFocusMin", 25),
-                                    pomodoroShortBreakMin = obj.optInt("pomodoroShortBreakMin", 5),
-                                    pomodoroLongBreakMin = obj.optInt("pomodoroLongBreakMin", 15),
-                                    pomodoroRounds = obj.optInt("pomodoroRounds", 4),
-                                    soundEnabled = obj.optBoolean("soundEnabled", true),
-                                    vibrateEnabled = obj.optBoolean("vibrateEnabled", true),
-                                    keepScreenAwake = obj.optBoolean("keepScreenAwake", true),
-                                    tags = obj.optString("tags", "")
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Restore goals if present
-                if (root.has("goals")) {
-                    val goalsArray = root.getJSONArray("goals")
-                    for (i in 0 until goalsArray.length()) {
-                        val obj = goalsArray.getJSONObject(i)
-                        val periodType = obj.optString("periodType", "")
-                        if (periodType.isNotBlank()) {
-                            database.goalDao().insertGoal(
-                                StudyGoalEntity(
-                                    periodType = periodType,
-                                    targetMinutes = obj.optInt("targetMinutes", 480),
-                                    subjectFilter = obj.optString("subjectFilter", ""),
-                                    active = obj.optBoolean("active", true)
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Restore reminders if present
-                if (root.has("reminders")) {
-                    val remindersArray = root.getJSONArray("reminders")
-                    for (i in 0 until remindersArray.length()) {
-                        val obj = remindersArray.getJSONObject(i)
-                        val title = obj.optString("title", "")
-                        if (title.isNotBlank()) {
-                            database.reminderDao().insertReminder(
-                                ReminderEntity(
-                                    title = title,
-                                    hour = obj.optInt("hour", 9),
-                                    minute = obj.optInt("minute", 0),
-                                    daysOfWeek = obj.optString("daysOfWeek", "MON,TUE,WED,THU,FRI,SAT,SUN"),
-                                    enabled = obj.optBoolean("enabled", true),
-                                    message = obj.optString("message", "Time for focus study session")
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Restore flashcards if present
-                if (root.has("flashcards")) {
-                    database.settingDao().setSetting(
-                        com.niloy.focentra.data.local.entity.SettingEntity("flashcards_json", root.getJSONArray("flashcards").toString())
-                    )
-                }
-
-                // Restore exam targets if present
-                if (root.has("examTargets")) {
-                    val examTargets = root.optJSONArray("examTargets")
-                        ?: JSONArray(root.getString("examTargets"))
-                    database.settingDao().setSetting(
-                        com.niloy.focentra.data.local.entity.SettingEntity("exam_targets_json", examTargets.toString())
-                    )
-                }
-
-                } else if (trimmed.startsWith("[")) {
-                // Array of sessions
-                val sessionsArray = JSONArray(trimmed)
-                for (i in 0 until sessionsArray.length()) {
-                    val obj = sessionsArray.getJSONObject(i)
-                    sessionList.add(parseSessionObject(obj))
-                }
-                } else {
-                    Unit
-                }
-
-                if (sessionList.isNotEmpty()) {
-                    sessionList.chunked(500).forEach { chunk ->
-                        database.sessionDao().insertSessions(chunk)
-                    }
-                }
-            }
-            checkAndUnlockAchievements()
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1421,170 +1383,59 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
         }
     }
 
-    suspend fun importDataJsonStream(inputStream: java.io.InputStream, replaceExisting: Boolean): Boolean = withContext(Dispatchers.IO) {
-        val content = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        importDataJson(content, replaceExisting)
-    }
-
+    // Explicit helper for earlier UI callers:
     suspend fun importSessionsCsvStream(
-        inputStream: java.io.InputStream,
+        csvText: String,
         replaceExisting: Boolean = false
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val records = inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                parseCsvRecords(reader.readText())
-            }
-            if (records.isEmpty()) return@withContext false
+            val rows = parseCsvRecords(csvText)
+            if (rows.isEmpty()) return@withContext false
+            val header = rows.first()
+            val dataRows = rows.drop(1)
+            if (header.isEmpty() || dataRows.isEmpty()) return@withContext false
 
-            val sessionList = mutableListOf<StudySessionEntity>()
-            val dataRecords = if (records.first().any {
-                    it.contains("Start Time", ignoreCase = true) || it.contains("Subject", ignoreCase = true)
-                }
-            ) {
-                records.drop(1)
-            } else {
-                records
-            }
-
-            for (parts in dataRecords) {
-                if (parts.all(String::isBlank)) continue
-                if (parts.size >= 8) {
-                    // Standard columns: ID,Start Time,End Time,Total Duration (s),Focused Duration (s),Paused Duration (s),Type,Subject,Topic,Productivity,Distractions,Mood,Energy,Notes
-                    val sTime = parts.getOrNull(1)?.toLongOrNull() ?: System.currentTimeMillis()
-                    val eTime = parts.getOrNull(2)?.toLongOrNull() ?: System.currentTimeMillis()
-                    val totalDur = parts.getOrNull(3)?.toLongOrNull() ?: 1500L
-                    val focusedDur = parts.getOrNull(4)?.toLongOrNull() ?: totalDur
-                    val pausedDur = parts.getOrNull(5)?.toLongOrNull() ?: 0L
-                    val sType = parts.getOrNull(6)?.ifBlank { "COUNTDOWN" } ?: "COUNTDOWN"
-                    val subj = parts.getOrNull(7)?.ifBlank { "General" } ?: "General"
-                    val top = parts.getOrNull(8) ?: ""
-                    val prod = parts.getOrNull(9)?.toIntOrNull()?.coerceIn(1, 5) ?: 4
-                    val distCount = parts.getOrNull(10)?.toIntOrNull() ?: 0
-                    val md = parts.getOrNull(11) ?: "GOOD"
-                    val energy = parts.getOrNull(12) ?: "HIGH"
-                    val nts = parts.getOrNull(13) ?: ""
-
-                    sessionList.add(
-                        StudySessionEntity(
-                            startTime = sTime,
-                            endTime = eTime,
-                            durationSeconds = totalDur,
-                            actualFocusedSeconds = focusedDur,
-                            pausedSeconds = pausedDur,
-                            sessionType = sType,
-                            subject = subj,
-                            topic = top,
-                            category = "Study",
-                            goal = "",
-                            notes = nts,
-                            tags = "",
-                            productivityRating = prod,
-                            distractionCount = distCount,
-                            distractionDetails = "",
-                            mood = md,
-                            energyLevel = energy,
-                            location = "Desk",
-                            completionStatus = "COMPLETED"
-                        )
-                    )
-
-                }
-            }
-
-            if (sessionList.isEmpty()) return@withContext false
             database.withTransaction {
-                if (replaceExisting) database.sessionDao().clearAllSessions()
-                sessionList.chunked(500).forEach { chunk ->
-                    database.sessionDao().insertSessions(chunk)
+                if (replaceExisting) {
+                    database.sessionDao().clearAllSessions()
+                }
+
+                dataRows.forEach { values ->
+                    if (values.size < header.size) return@forEach
+                    val map = header.indices.associate { i -> header[i] to values[i] }
+
+                    val item = StudySessionEntity(
+                        id = map["id"]?.toLongOrNull() ?: 0L,
+                        startTime = map["startTime"]?.toLongOrNull() ?: System.currentTimeMillis(),
+                        endTime = map["endTime"]?.toLongOrNull() ?: System.currentTimeMillis(),
+                        durationSeconds = map["durationSeconds"]?.toLongOrNull() ?: 0L,
+                        actualFocusedSeconds = map["actualFocusedSeconds"]?.toLongOrNull() ?: 0L,
+                        pausedSeconds = map["pausedSeconds"]?.toLongOrNull() ?: 0L,
+                        sessionType = map["sessionType"] ?: "COUNTDOWN",
+                        subject = map["subject"] ?: "General Study",
+                        topic = map["topic"] ?: "",
+                        category = map["category"] ?: "",
+                        goal = map["goal"] ?: "",
+                        notes = map["notes"] ?: "",
+                        tags = map["tags"] ?: "",
+                        productivityRating = map["productivityRating"]?.toIntOrNull() ?: 0,
+                        distractionCount = map["distractionCount"]?.toIntOrNull() ?: 0,
+                        distractionDetails = map["distractionDetails"] ?: "",
+                        mood = map["mood"] ?: "",
+                        energyLevel = map["energyLevel"] ?: "",
+                        location = map["location"] ?: "",
+                        completionStatus = map["completionStatus"] ?: "COMPLETED",
+                        targetId = map["targetId"] ?: "",
+                        createdAt = System.currentTimeMillis()
+                    )
+                    database.sessionDao().insertSession(item)
                 }
             }
-            checkAndUnlockAchievements()
+
             true
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
     }
-}
-
-data class StreakInfo(
-    val currentStreak: Int,
-    val longestStreak: Int,
-    val isStudiedToday: Boolean
-)
-
-fun calculateStreak(sessions: List<StudySessionEntity>): StreakInfo {
-    if (sessions.isEmpty()) return StreakInfo(0, 0, false)
-
-    // Group sessions by local date string YYYY-MM-DD
-    val datesWithStudy = mutableSetOf<String>()
-    val cal = Calendar.getInstance()
-
-    sessions.forEach {
-        cal.timeInMillis = it.startTime
-        val y = cal.get(Calendar.YEAR)
-        val m = cal.get(Calendar.MONTH) + 1
-        val d = cal.get(Calendar.DAY_OF_MONTH)
-        val dateKey = String.format("%04d-%02d-%02d", y, m, d)
-        datesWithStudy.add(dateKey)
-    }
-
-    val todayCal = Calendar.getInstance()
-    val todayKey = String.format("%04d-%02d-%02d", todayCal.get(Calendar.YEAR), todayCal.get(Calendar.MONTH) + 1, todayCal.get(Calendar.DAY_OF_MONTH))
-
-    val isStudiedToday = datesWithStudy.contains(todayKey)
-
-    // Check consecutive days starting from today or yesterday
-    var currentStreak = 0
-    val checkCal = Calendar.getInstance()
-    if (!isStudiedToday) {
-        checkCal.add(Calendar.DAY_OF_YEAR, -1)
-    }
-
-    while (true) {
-        val k = String.format("%04d-%02d-%02d", checkCal.get(Calendar.YEAR), checkCal.get(Calendar.MONTH) + 1, checkCal.get(Calendar.DAY_OF_MONTH))
-        if (datesWithStudy.contains(k)) {
-            currentStreak++
-            checkCal.add(Calendar.DAY_OF_YEAR, -1)
-        } else {
-            break
-        }
-    }
-
-    // Calculate longest streak by sorting unique dates
-    val sortedDates = datesWithStudy.sorted()
-    var longestStreak = 0
-    var tempStreak = 0
-    var previousDate: String? = null
-
-    for (dStr in sortedDates) {
-        val previous = previousDate
-        if (previous == null) {
-            tempStreak = 1
-        } else {
-            val parts = previous.split("-").map { it.toInt() }
-            val nextDate = Calendar.getInstance().apply {
-                clear()
-                set(parts[0], parts[1] - 1, parts[2])
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
-            val expectedDate = String.format(
-                "%04d-%02d-%02d",
-                nextDate.get(Calendar.YEAR),
-                nextDate.get(Calendar.MONTH) + 1,
-                nextDate.get(Calendar.DAY_OF_MONTH)
-            )
-            if (dStr == expectedDate) {
-                tempStreak++
-            } else {
-                tempStreak = 1
-            }
-        }
-        if (tempStreak > longestStreak) longestStreak = tempStreak
-        previousDate = dStr
-    }
-
-    if (currentStreak > longestStreak) longestStreak = currentStreak
-
-    return StreakInfo(currentStreak, longestStreak, isStudiedToday)
 }

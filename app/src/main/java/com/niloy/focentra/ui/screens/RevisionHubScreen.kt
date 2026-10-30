@@ -1,13 +1,32 @@
 package com.niloy.focentra.ui.screens
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -16,9 +35,43 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.HistoryEdu
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircleOutline
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,7 +91,9 @@ import com.niloy.focentra.viewmodel.MainViewModel
 import com.niloy.focentra.viewmodel.NotificationType
 import com.niloy.focentra.viewmodel.RevisionRecord
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 data class ScheduledRevisionItem(
     val chapter: ChapterEntity,
@@ -62,7 +117,6 @@ fun RevisionHubScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Segmented Tab Row
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = selectedTab == 0,
@@ -162,7 +216,7 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
     val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
     val dbRevisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
 
-    var selectedSubject by remember { mutableStateOf(subjects.firstOrNull()?.name ?: "") }
+    var selectedSubject by remember { mutableStateOf("") }
     var selectedChapter by remember { mutableStateOf("") }
 
     var warningTitle by remember { mutableStateOf("") }
@@ -174,6 +228,28 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
     var skipDialogData by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+    LaunchedEffect(subjects) {
+        if (subjects.isEmpty()) {
+            selectedSubject = ""
+            selectedChapter = ""
+            return@LaunchedEffect
+        }
+
+        if (selectedSubject.isBlank() || subjects.none { it.name.equals(selectedSubject, ignoreCase = true) }) {
+            selectedSubject = subjects.first().name
+        }
+    }
+
+    LaunchedEffect(selectedSubject, chapters) {
+        if (selectedChapter.isNotBlank()) {
+            val valid = chapters.any {
+                it.subjectName.equals(selectedSubject, ignoreCase = true) &&
+                    it.chapterName.equals(selectedChapter, ignoreCase = true)
+            }
+            if (!valid) selectedChapter = ""
+        }
+    }
+
     val pendingRevision = remember(activeNotifications) {
         activeNotifications.firstOrNull { it.type == NotificationType.REVISION_DUE }
     }
@@ -181,8 +257,10 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
     if (skipDialogData != null) {
         val (sub, ch) = skipDialogData!!
         val currentSkips = dbRevisionSkips.count {
-            it.subjectName.equals(sub, ignoreCase = true) && it.chapterName.equals(ch, ignoreCase = true)
+            it.subjectName.equals(sub, ignoreCase = true) &&
+                it.chapterName.equals(ch, ignoreCase = true)
         }
+
         SkipRevisionDialog(
             subjectName = sub,
             chapterName = ch,
@@ -316,7 +394,6 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Pending Revision Task Banner (if revision due)
         if (pendingRevision != null) {
             Card(
                 shape = RoundedCornerShape(20.dp),
@@ -384,6 +461,7 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                                     viewModel.timerEngine.cancelSession()
                                     viewModel.timerEngine.dismissCompletionSheet()
                                 }
+
                                 viewModel.timerEngine.configureSession(
                                     mode = SessionMode.STOPWATCH,
                                     subject = pendingRevision.subjectName,
@@ -403,7 +481,6 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
             }
         }
 
-        // Active Stopwatch Timer Ring inside Revision Hub
         if (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED) {
             Card(
                 shape = RoundedCornerShape(24.dp),
@@ -433,9 +510,7 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                             pendingSaveData = Triple(sub, ch, durMins)
                             showSaveDialog = true
                         },
-                        onCancelClick = {
-                            showCancelConfirmDialog = true
-                        },
+                        onCancelClick = { showCancelConfirmDialog = true },
                         onLogDistractionClick = { viewModel.timerEngine.addDistraction("Other") },
                         onToggleFullScreen = { viewModel.setFullScreenFocus(true) },
                         ringSize = 250.dp
@@ -443,7 +518,6 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                 }
             }
         } else {
-            // Subject Selector
             Column {
                 Text(
                     text = "Select Subject",
@@ -453,7 +527,7 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(subjects) { sub ->
-                        val isSelected = sub.name == selectedSubject
+                        val isSelected = sub.name.equals(selectedSubject, ignoreCase = true)
                         FilterChip(
                             selected = isSelected,
                             onClick = {
@@ -475,7 +549,6 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                 }
             }
 
-            // Chapter Selector
             if (matchingChapters.isNotEmpty()) {
                 Column {
                     Text(
@@ -486,8 +559,13 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(matchingChapters) { ch ->
-                            val cleanName = ch.chapterName.replace(Regex("(?i)\\bnoun\\b"), "").replace("Noun", "").replace("noun", "").trim()
-                            val isSelected = ch.chapterName == selectedChapter
+                            val cleanName = ch.chapterName
+                                .replace(Regex("(?i)\\bnoun\\b"), "")
+                                .replace("Noun", "")
+                                .replace("noun", "")
+                                .trim()
+
+                            val isSelected = ch.chapterName.equals(selectedChapter, ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
                                 onClick = { selectedChapter = if (isSelected) "" else ch.chapterName },
@@ -499,7 +577,6 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                 }
             }
 
-            // Revision Mode Info Header
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -538,6 +615,7 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                                 viewModel.timerEngine.cancelSession()
                                 viewModel.timerEngine.dismissCompletionSheet()
                             }
+
                             viewModel.timerEngine.configureSession(
                                 mode = SessionMode.STOPWATCH,
                                 subject = selectedSubject,
@@ -614,7 +692,7 @@ fun RevisionSaveDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Focused Duration: ${durationMinutes}m",
+                            text = "Focused Duration: ${durationMinutes.coerceAtLeast(1)}m",
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -634,7 +712,7 @@ fun RevisionSaveDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(notes) },
+                onClick = { onSave(notes.trim()) },
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Text("Save Session")
@@ -652,13 +730,14 @@ fun RevisionSaveDialog(
 private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    val timerState by viewModel.timerEngine.uiState.collectAsStateWithLifecycle()
 
     var selectedSubjectFilter by remember { mutableStateOf("All") }
 
     val scheduledList = remember(chapters, selectedSubjectFilter) {
-        val list = mutableListOf<ScheduledRevisionItem>()
+        val result = mutableListOf<ScheduledRevisionItem>()
         val now = System.currentTimeMillis()
-        val ONE_DAY = 86400000L
+        val oneDayMs = 86_400_000L
 
         val filteredChapters = if (selectedSubjectFilter == "All") {
             chapters
@@ -666,28 +745,38 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
             chapters.filter { it.subjectName.equals(selectedSubjectFilter, ignoreCase = true) }
         }
 
-        filteredChapters.filter { it.tapCount >= 3 || it.status == "অধ্যায় Completely শেষ" }.forEach { ch ->
-            val compTime = if (ch.completedTimestamp > 0) ch.completedTimestamp else ch.lastStudiedTimestamp
+        filteredChapters
+            .filter { it.tapCount >= 3 || it.status == "অধ্যায় Completely শেষ" }
+            .forEach { ch ->
+                val completedAt = if (ch.completedTimestamp > 0L) ch.completedTimestamp else ch.lastStudiedTimestamp
+                if (completedAt <= 0L) return@forEach
 
-            val stages = listOf(
-                Pair("1st Day (Quick Recap)", compTime + 1 * ONE_DAY),
-                Pair("3rd Day (Detailed Review)", compTime + 3 * ONE_DAY),
-                Pair("7th Day (Problem Solving)", compTime + 7 * ONE_DAY),
-                Pair("15th Day (Final Master Test)", compTime + 15 * ONE_DAY)
-            )
+                val stages = listOf(
+                    Pair("1st Day (Quick Recap)", completedAt + 1 * oneDayMs),
+                    Pair("3rd Day (Detailed Review)", completedAt + 3 * oneDayMs),
+                    Pair("7th Day (Problem Solving)", completedAt + 7 * oneDayMs),
+                    Pair("15th Day (Final Master Test)", completedAt + 15 * oneDayMs)
+                )
 
-            stages.forEach { (stage, dueMs) ->
-                if (dueMs >= now - ONE_DAY) {
-                    val daysRemaining = ((dueMs - now) / ONE_DAY).toInt()
-                    list.add(ScheduledRevisionItem(ch, stage, dueMs, daysRemaining))
+                stages.forEach { (stage, dueMs) ->
+                    if (dueMs >= now - oneDayMs) {
+                        val daysRemaining = ((dueMs - now) / oneDayMs).toInt()
+                        result.add(
+                            ScheduledRevisionItem(
+                                chapter = ch,
+                                stageName = stage,
+                                dueDateMs = dueMs,
+                                daysRemaining = daysRemaining
+                            )
+                        )
+                    }
                 }
             }
-        }
-        list.sortedBy { it.dueDateMs }
+
+        result.sortedBy { it.dueDateMs }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Subject Filter Chips Row
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -702,6 +791,7 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                     shape = RoundedCornerShape(12.dp)
                 )
             }
+
             items(subjects) { sub ->
                 val isSelected = sub.name.equals(selectedSubjectFilter, ignoreCase = true)
                 FilterChip(
@@ -747,7 +837,7 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "After completing a chapter, scientific revision schedules for days 1, 3, 7, and 15 will appear here.",
+                        text = "After completing a chapter, revision schedules for days 1, 3, 7, and 15 will appear here.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center
@@ -759,11 +849,12 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 100.dp)
             ) {
-                items(scheduledList) { item ->
+                items(scheduledList, key = { it.chapter.id to it.stageName to it.dueDateMs }) { item ->
                     ScheduledRevisionCard(
                         item = item,
+                        isTimerRunning = timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED,
                         onStart = {
-                            if (viewModel.timerEngine.uiState.value.status == TimerStatus.RUNNING || viewModel.timerEngine.uiState.value.status == TimerStatus.PAUSED) {
+                            if (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED) {
                                 viewModel.timerEngine.cancelSession()
                                 viewModel.timerEngine.dismissCompletionSheet()
                             }
@@ -785,6 +876,7 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
 @Composable
 private fun ScheduledRevisionCard(
     item: ScheduledRevisionItem,
+    isTimerRunning: Boolean,
     onStart: () -> Unit
 ) {
     val dateStr = remember(item.dueDateMs) {
@@ -871,6 +963,7 @@ private fun ScheduledRevisionCard(
 
             Button(
                 onClick = onStart,
+                enabled = !isTimerRunning,
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -890,7 +983,7 @@ private fun RevisionHistorySection(viewModel: MainViewModel) {
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     val dbRevisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
 
-    var selectedSubjectFilter by remember { mutableStateOf("All") } // "All", "Skip", or Subject Name
+    var selectedSubjectFilter by remember { mutableStateOf("All") }
     var itemToDelete by remember { mutableStateOf<RevisionRecord?>(null) }
     var selectedSkipDetail by remember { mutableStateOf<RevisionSkipEntity?>(null) }
 
@@ -941,15 +1034,14 @@ private fun RevisionHistorySection(viewModel: MainViewModel) {
     }
 
     val filteredHistory = remember(history, selectedSubjectFilter) {
-        if (selectedSubjectFilter == "All") {
-            history
-        } else {
-            history.filter { it.subjectName.equals(selectedSubjectFilter, ignoreCase = true) }
+        when (selectedSubjectFilter) {
+            "All" -> history
+            "Skip" -> emptyList()
+            else -> history.filter { it.subjectName.equals(selectedSubjectFilter, ignoreCase = true) }
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Subject Filter Chips Row with "Skip" filter placed right after "All"
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
@@ -964,6 +1056,7 @@ private fun RevisionHistorySection(viewModel: MainViewModel) {
                     shape = RoundedCornerShape(12.dp)
                 )
             }
+
             item {
                 FilterChip(
                     selected = selectedSubjectFilter == "Skip",
@@ -980,6 +1073,7 @@ private fun RevisionHistorySection(viewModel: MainViewModel) {
                     shape = RoundedCornerShape(12.dp)
                 )
             }
+
             items(subjects) { sub ->
                 val isSelected = sub.name.equals(selectedSubjectFilter, ignoreCase = true)
                 FilterChip(
@@ -1222,7 +1316,13 @@ fun SkipRevisionDialog(
     val context = LocalContext.current
     var reasonText by remember { mutableStateOf("") }
     var selectedCal by remember {
-        mutableStateOf(Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 9); set(Calendar.MINUTE, 0) })
+        mutableStateOf(
+            Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 9)
+                set(Calendar.MINUTE, 0)
+            }
+        )
     }
     var errorMessage by remember { mutableStateOf("") }
 
@@ -1235,14 +1335,20 @@ fun SkipRevisionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (currentSkipCount >= 5) return@Button
+                    if (currentSkipCount >= 5) {
+                        errorMessage = "Maximum 5 skips allowed for this chapter."
+                        return@Button
+                    }
                     if (reasonText.isBlank()) {
                         errorMessage = "Please enter the reason for skipping."
-                    } else if (selectedCal.timeInMillis <= System.currentTimeMillis()) {
-                        errorMessage = "Recap time must be in the future."
-                    } else {
-                        onConfirmSkip(reasonText, selectedCal.timeInMillis)
+                        return@Button
                     }
+                    if (selectedCal.timeInMillis <= System.currentTimeMillis()) {
+                        errorMessage = "Recap time must be in the future."
+                        return@Button
+                    }
+
+                    onConfirmSkip(reasonText.trim(), selectedCal.timeInMillis)
                 },
                 enabled = currentSkipCount < 5,
                 shape = RoundedCornerShape(10.dp)
@@ -1289,7 +1395,7 @@ fun SkipRevisionDialog(
 
                 if (currentSkipCount >= 5) {
                     Text(
-                        text = "Maximum 5 skips allowed for this chapter! You must complete 15 hours of revision for this chapter before starting other subjects.",
+                        text = "Maximum 5 skips allowed for this chapter! You must complete 15 hours of revision before starting other subjects.",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.error
                     )
@@ -1315,21 +1421,22 @@ fun SkipRevisionDialog(
 
                         OutlinedButton(
                             onClick = {
-                                val dpd = android.app.DatePickerDialog(
+                                DatePickerDialog(
                                     context,
                                     { _, year, month, dayOfMonth ->
-                                        val newC = Calendar.getInstance().apply { timeInMillis = selectedCal.timeInMillis }
-                                        newC.set(Calendar.YEAR, year)
-                                        newC.set(Calendar.MONTH, month)
-                                        newC.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                                        selectedCal = newC
+                                        val newCal = Calendar.getInstance().apply {
+                                            timeInMillis = selectedCal.timeInMillis
+                                            set(Calendar.YEAR, year)
+                                            set(Calendar.MONTH, month)
+                                            set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                        }
+                                        selectedCal = newCal
                                         errorMessage = ""
                                     },
                                     selectedCal.get(Calendar.YEAR),
                                     selectedCal.get(Calendar.MONTH),
                                     selectedCal.get(Calendar.DAY_OF_MONTH)
-                                )
-                                dpd.show()
+                                ).show()
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
@@ -1341,20 +1448,21 @@ fun SkipRevisionDialog(
 
                         OutlinedButton(
                             onClick = {
-                                val tpd = android.app.TimePickerDialog(
+                                TimePickerDialog(
                                     context,
                                     { _, hourOfDay, minute ->
-                                        val newC = Calendar.getInstance().apply { timeInMillis = selectedCal.timeInMillis }
-                                        newC.set(Calendar.HOUR_OF_DAY, hourOfDay)
-                                        newC.set(Calendar.MINUTE, minute)
-                                        selectedCal = newC
+                                        val newCal = Calendar.getInstance().apply {
+                                            timeInMillis = selectedCal.timeInMillis
+                                            set(Calendar.HOUR_OF_DAY, hourOfDay)
+                                            set(Calendar.MINUTE, minute)
+                                        }
+                                        selectedCal = newCal
                                         errorMessage = ""
                                     },
                                     selectedCal.get(Calendar.HOUR_OF_DAY),
                                     selectedCal.get(Calendar.MINUTE),
                                     false
-                                )
-                                tpd.show()
+                                ).show()
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)

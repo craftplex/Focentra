@@ -2,20 +2,58 @@ package com.niloy.focentra.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AvTimer
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.niloy.focentra.data.local.entity.PresetEntity
@@ -208,19 +246,21 @@ fun PresetCard(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis
                     )
+
                     val detailText = when (preset.type) {
                         "POMODORO" -> "${preset.pomodoroFocusMin}m focus / ${preset.pomodoroShortBreakMin}m break • ${preset.pomodoroRounds}r"
                         "STOPWATCH" -> "Open stopwatch"
                         else -> "${preset.durationMinutes}m duration"
                     }
+
                     Text(
                         text = "${preset.subject} • $detailText",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -337,18 +377,39 @@ fun PresetDetailDialog(
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        if (preset.type == "POMODORO") {
-                            Text(
-                                text = "• Focus Time: ${preset.pomodoroFocusMin} minutes\n• Short Break: ${preset.pomodoroShortBreakMin} minutes\n• Long Break: ${preset.pomodoroLongBreakMin} minutes\n• Total Rounds: ${preset.pomodoroRounds}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        } else {
-                            Text(
-                                text = "• Duration: ${preset.durationMinutes} minutes",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+
+                        when (preset.type) {
+                            "POMODORO" -> {
+                                Text(
+                                    text = "• Focus Time: ${preset.pomodoroFocusMin} minutes\n" +
+                                        "• Short Break: ${preset.pomodoroShortBreakMin} minutes\n" +
+                                        "• Long Break: ${preset.pomodoroLongBreakMin} minutes\n" +
+                                        "• Total Rounds: ${preset.pomodoroRounds}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            "COUNTDOWN" -> {
+                                Text(
+                                    text = "• Duration: ${preset.durationMinutes} minutes",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            "STOPWATCH" -> {
+                                Text(
+                                    text = "• Open-ended study time\n• No fixed duration",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            else -> {
+                                Text(
+                                    text = "• Duration: ${preset.durationMinutes} minutes",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
                 }
@@ -384,18 +445,23 @@ fun PresetEditDialog(
     onDismiss: () -> Unit,
     onSave: (PresetEntity) -> Unit
 ) {
-    var title by remember { mutableStateOf(existingPreset?.title ?: "") }
-    var selectedType by remember { mutableStateOf(existingPreset?.type ?: "POMODORO") }
-    var selectedSubject by remember { mutableStateOf(existingPreset?.subject ?: (subjects.firstOrNull() ?: "General Study")) }
-    var topic by remember { mutableStateOf(existingPreset?.topic ?: "") }
-    var durationMinutes by remember { mutableStateOf((existingPreset?.durationMinutes ?: 25).toString()) }
-    var pomodoroFocusMin by remember { mutableStateOf((existingPreset?.pomodoroFocusMin ?: 25).toString()) }
-    var pomodoroShortBreakMin by remember { mutableStateOf((existingPreset?.pomodoroShortBreakMin ?: 5).toString()) }
-    var pomodoroLongBreakMin by remember { mutableStateOf((existingPreset?.pomodoroLongBreakMin ?: 15).toString()) }
-    var pomodoroRounds by remember { mutableStateOf((existingPreset?.pomodoroRounds ?: 4).toString()) }
+    var title by remember(existingPreset?.id) { mutableStateOf(existingPreset?.title ?: "") }
+    var selectedType by remember(existingPreset?.id) { mutableStateOf(existingPreset?.type ?: "POMODORO") }
+    var selectedSubject by remember(existingPreset?.id, subjects) {
+        mutableStateOf(existingPreset?.subject ?: subjects.firstOrNull() ?: "General Study")
+    }
+    var topic by remember(existingPreset?.id) { mutableStateOf(existingPreset?.topic ?: "") }
+    var durationMinutes by remember(existingPreset?.id) { mutableStateOf((existingPreset?.durationMinutes ?: 25).toString()) }
+    var pomodoroFocusMin by remember(existingPreset?.id) { mutableStateOf((existingPreset?.pomodoroFocusMin ?: 25).toString()) }
+    var pomodoroShortBreakMin by remember(existingPreset?.id) { mutableStateOf((existingPreset?.pomodoroShortBreakMin ?: 5).toString()) }
+    var pomodoroLongBreakMin by remember(existingPreset?.id) { mutableStateOf((existingPreset?.pomodoroLongBreakMin ?: 15).toString()) }
+    var pomodoroRounds by remember(existingPreset?.id) { mutableStateOf((existingPreset?.pomodoroRounds ?: 4).toString()) }
 
-    val TITLE_LIMIT = 50
-    val TOPIC_LIMIT = 40
+    val subjectOptions = if (subjects.isEmpty()) listOf("General Study") else subjects
+    var subjectExpanded by remember { mutableStateOf(false) }
+
+    val titleLimit = 50
+    val topicLimit = 40
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -404,12 +470,12 @@ fun PresetEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = title,
-                    onValueChange = { title = it.take(TITLE_LIMIT) },
+                    onValueChange = { title = it.take(titleLimit) },
                     label = { Text("Preset Title") },
                     placeholder = { Text("e.g. Deep Math Sprint") },
                     supportingText = {
                         Text(
-                            text = "${title.length}/$TITLE_LIMIT",
+                            text = "${title.length}/$titleLimit",
                             style = MaterialTheme.typography.labelSmall
                         )
                     },
@@ -417,6 +483,42 @@ fun PresetEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
+
+                Text("Subject", style = MaterialTheme.typography.labelSmall)
+
+                ExposedDropdownMenuBox(
+                    expanded = subjectExpanded,
+                    onExpandedChange = { subjectExpanded = !subjectExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedSubject,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Subject") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = subjectExpanded)
+                        },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = subjectExpanded,
+                        onDismissRequest = { subjectExpanded = false }
+                    ) {
+                        subjectOptions.forEach { subject ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(subject) },
+                                onClick = {
+                                    selectedSubject = subject
+                                    subjectExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Text("Mode", style = MaterialTheme.typography.labelSmall)
                 Row(
@@ -428,6 +530,7 @@ fun PresetEditDialog(
                         "COUNTDOWN" to "Countdown",
                         "STOPWATCH" to "Stopwatch"
                     )
+
                     modes.forEach { (type, label) ->
                         val isSelected = selectedType == type
                         Surface(
@@ -454,47 +557,70 @@ fun PresetEditDialog(
                                     color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     softWrap = false,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    textAlign = TextAlign.Center
                                 )
                             }
                         }
                     }
                 }
 
-                if (selectedType == "POMODORO") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (selectedType) {
+                    "POMODORO" -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = pomodoroFocusMin,
+                                onValueChange = { pomodoroFocusMin = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Focus (m)") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            OutlinedTextField(
+                                value = pomodoroShortBreakMin,
+                                onValueChange = { pomodoroShortBreakMin = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Break (m)") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = pomodoroLongBreakMin,
+                                onValueChange = { pomodoroLongBreakMin = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Long Break (m)") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            OutlinedTextField(
+                                value = pomodoroRounds,
+                                onValueChange = { pomodoroRounds = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Rounds") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+                    "COUNTDOWN" -> {
                         OutlinedTextField(
-                            value = pomodoroFocusMin,
-                            onValueChange = { pomodoroFocusMin = it },
-                            label = { Text("Focus (m)") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        OutlinedTextField(
-                            value = pomodoroShortBreakMin,
-                            onValueChange = { pomodoroShortBreakMin = it },
-                            label = { Text("Break (m)") },
-                            modifier = Modifier.weight(1f),
+                            value = durationMinutes,
+                            onValueChange = { durationMinutes = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Duration (minutes)") },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         )
                     }
-                } else if (selectedType == "COUNTDOWN") {
-                    OutlinedTextField(
-                        value = durationMinutes,
-                        onValueChange = { durationMinutes = it },
-                        label = { Text("Duration (minutes)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    )
+                    "STOPWATCH" -> {
+                        // no fixed duration for stopwatch preset
+                    }
                 }
 
                 OutlinedTextField(
                     value = topic,
-                    onValueChange = { topic = it.take(TOPIC_LIMIT) },
+                    onValueChange = { topic = it.take(topicLimit) },
                     label = { Text("Topic (Optional)") },
                     supportingText = {
                         Text(
-                            text = "${topic.length}/$TOPIC_LIMIT",
+                            text = "${topic.length}/$topicLimit",
                             style = MaterialTheme.typography.labelSmall
                         )
                     },
@@ -507,22 +633,31 @@ fun PresetEditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (title.isNotBlank()) {
-                        onSave(
-                            PresetEntity(
-                                id = existingPreset?.id ?: 0L,
-                                title = title,
-                                type = selectedType,
-                                subject = selectedSubject,
-                                topic = topic,
-                                durationMinutes = durationMinutes.toIntOrNull() ?: 25,
-                                pomodoroFocusMin = pomodoroFocusMin.toIntOrNull() ?: 25,
-                                pomodoroShortBreakMin = pomodoroShortBreakMin.toIntOrNull() ?: 5,
-                                pomodoroLongBreakMin = pomodoroLongBreakMin.toIntOrNull() ?: 15,
-                                pomodoroRounds = pomodoroRounds.toIntOrNull() ?: 4
-                            )
+                    val sanitizedTitle = title.trim()
+                    val safeSelectedSubject = selectedSubject.trim().ifBlank { "General Study" }
+
+                    if (sanitizedTitle.isBlank()) return@Button
+
+                    val finalDurationMinutes = durationMinutes.toPositiveIntOrDefault(25)
+                    val finalFocus = pomodoroFocusMin.toPositiveIntOrDefault(25)
+                    val finalShortBreak = pomodoroShortBreakMin.toPositiveIntOrDefault(5)
+                    val finalLongBreak = pomodoroLongBreakMin.toPositiveIntOrDefault(15)
+                    val finalRounds = pomodoroRounds.toPositiveIntOrDefault(4)
+
+                    onSave(
+                        PresetEntity(
+                            id = existingPreset?.id ?: 0L,
+                            title = sanitizedTitle,
+                            type = selectedType,
+                            subject = safeSelectedSubject,
+                            topic = topic.trim(),
+                            durationMinutes = if (selectedType == "COUNTDOWN") finalDurationMinutes else 25,
+                            pomodoroFocusMin = if (selectedType == "POMODORO") finalFocus else 25,
+                            pomodoroShortBreakMin = if (selectedType == "POMODORO") finalShortBreak else 5,
+                            pomodoroLongBreakMin = if (selectedType == "POMODORO") finalLongBreak else 15,
+                            pomodoroRounds = if (selectedType == "POMODORO") finalRounds else 4
                         )
-                    }
+                    )
                 }
             ) {
                 Text("Save Preset")
@@ -532,4 +667,8 @@ fun PresetEditDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+private fun String.toPositiveIntOrDefault(default: Int): Int {
+    return this.trim().toIntOrNull()?.takeIf { it > 0 } ?: default
 }

@@ -1,21 +1,20 @@
 package com.niloy.focentra.ui.screens
 
-import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,24 +23,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.niloy.focentra.BuildConfig
 import com.niloy.focentra.data.local.entity.ReminderEntity
-import com.niloy.focentra.ui.components.SectionHeader
 import com.niloy.focentra.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -65,6 +65,7 @@ fun SettingsScreen(
     var showDaynexaConsentDialog by remember { mutableStateOf(false) }
     var showDaynexaDisconnectDialog by remember { mutableStateOf(false) }
     var showClearAllDataDialog by remember { mutableStateOf(false) }
+
     var importJsonText by remember { mutableStateOf("") }
     var importCsvText by remember { mutableStateOf("") }
     var importReplace by remember { mutableStateOf(false) }
@@ -72,18 +73,23 @@ fun SettingsScreen(
     var isImporting by remember { mutableStateOf(false) }
     var importStatusMessage by remember { mutableStateOf<String?>(null) }
 
+    val clipboardManager = LocalClipboardManager.current
+    var importError by remember { mutableStateOf<String?>(null) }
+    var csvError by remember { mutableStateOf<String?>(null) }
+
     val dailyGoal = goals.find { it.periodType == "DAILY" }?.targetMinutes ?: 480
     val weeklyGoal = goals.find { it.periodType == "WEEKLY" }?.targetMinutes ?: 2400
     val monthlyGoal = goals.find { it.periodType == "MONTHLY" }?.targetMinutes ?: 9600
-
 
     if (showGoalEditDialog != null) {
         val periodType = showGoalEditDialog!!
         val currentTarget = when (periodType) {
             "DAILY" -> dailyGoal
             "WEEKLY" -> weeklyGoal
-            else -> monthlyGoal
+            "MONTHLY" -> monthlyGoal
+            else -> dailyGoal
         }
+
         GoalEditDialog(
             periodType = periodType,
             currentMinutes = currentTarget,
@@ -172,17 +178,14 @@ fun SettingsScreen(
         )
     }
 
-    val clipboardManager = LocalClipboardManager.current
-    var importError by remember { mutableStateOf<String?>(null) }
-
-    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        viewModel.repository.exportDataJsonStream(out)
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        viewModel.repository.exportDataJsonStream(output)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -191,27 +194,28 @@ fun SettingsScreen(
         }
     }
 
-    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             isImporting = true
             importStatusMessage = "Importing JSON file, please wait..."
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val stream = context.contentResolver.openInputStream(uri)
                     val success = if (stream != null) {
                         viewModel.repository.importDataJsonStream(stream, false)
                     } else false
 
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    withContext(Dispatchers.Main) {
                         if (success) viewModel.rescheduleReminders()
                         isImporting = false
-                        importStatusMessage = if (success) "JSON Import completed successfully!" else "JSON Import failed. Please check file format."
+                        importStatusMessage =
+                            if (success) "JSON Import completed successfully!" else "JSON Import failed. Please check file format."
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    withContext(Dispatchers.Main) {
                         isImporting = false
                         importStatusMessage = "JSON Import failed: ${e.message}"
                     }
@@ -220,26 +224,27 @@ fun SettingsScreen(
         }
     }
 
-    val importCsvLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    val importCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             isImporting = true
             importStatusMessage = "Importing CSV file, please wait..."
-            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val stream = context.contentResolver.openInputStream(uri)
                     val success = if (stream != null) {
                         viewModel.repository.importSessionsCsvStream(stream)
                     } else false
 
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    withContext(Dispatchers.Main) {
                         isImporting = false
-                        importStatusMessage = if (success) "CSV Import completed successfully!" else "CSV Import failed."
+                        importStatusMessage =
+                            if (success) "CSV Import completed successfully!" else "CSV Import failed."
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    withContext(Dispatchers.Main) {
                         isImporting = false
                         importStatusMessage = "CSV Import failed: ${e.message}"
                     }
@@ -305,7 +310,6 @@ fun SettingsScreen(
     }
 
     if (showCsvTextImportDialog) {
-        var csvError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = {
                 showCsvTextImportDialog = false
@@ -373,24 +377,28 @@ fun SettingsScreen(
                             csvError = "Please enter or paste CSV content"
                             return@Button
                         }
+
                         isImporting = true
                         importStatusMessage = "Importing CSV text, please wait..."
                         showCsvTextImportDialog = false
-                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+
+                        coroutineScope.launch(Dispatchers.IO) {
                             try {
                                 val inputStream = importCsvText.byteInputStream(Charsets.UTF_8)
                                 val success = viewModel.repository.importSessionsCsvStream(
                                     inputStream,
                                     replaceExisting = importReplace
                                 )
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+
+                                withContext(Dispatchers.Main) {
                                     isImporting = false
-                                    importStatusMessage = if (success) "CSV Text Import completed successfully!" else "CSV Text Import failed. Please check formatting."
+                                    importStatusMessage =
+                                        if (success) "CSV Text Import completed successfully!" else "CSV Text Import failed. Please check formatting."
                                     importCsvText = ""
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                withContext(Dispatchers.Main) {
                                     isImporting = false
                                     importStatusMessage = "CSV Text Import failed: ${e.message}"
                                 }
@@ -510,7 +518,10 @@ fun SettingsScreen(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
@@ -645,8 +656,7 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 120.dp)
     ) {
-
-        // Section 2: Study Goals
+        // Section 1: Study Goals
         item {
             Text(
                 text = "STUDY TARGET GOALS",
@@ -663,7 +673,7 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     SettingGoalItem(
@@ -703,17 +713,16 @@ fun SettingsScreen(
             }
         }
 
-        // Section 3: Study Reminders (Clean Redesign matching photo)
+        // Section 2: Study Reminders
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    // Header row: "Study Reminders" on left with "+" icon on right
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -849,7 +858,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 4: Data Management & Backup
+        // Section 3: Data Management & Backup
         item {
             Text(
                 text = "DATA PORTABILITY & BACKUP",
@@ -866,25 +875,23 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Option 1: JSON Export
                     ActionTile(
                         icon = Icons.Default.CloudDownload,
                         title = "JSON Export",
                         subtitle = "Save full .json backup file locally",
                         onClick = {
-                            val formatter = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
-                            val timestamp = formatter.format(java.util.Date())
+                            val formatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                            val timestamp = formatter.format(Date())
                             exportLauncher.launch("focentra_backup_$timestamp.json")
                         }
                     )
 
-                    // Option 2: JSON Import
                     ActionTile(
                         icon = Icons.Default.CloudUpload,
                         title = "JSON Import",
@@ -894,7 +901,6 @@ fun SettingsScreen(
                         }
                     )
 
-                    // Option 3: CSV Text Export
                     ActionTile(
                         icon = Icons.Default.TableChart,
                         title = "CSV Text Export",
@@ -907,7 +913,6 @@ fun SettingsScreen(
                         }
                     )
 
-                    // Option 4: CSV Text Import
                     ActionTile(
                         icon = Icons.Default.EditNote,
                         title = "CSV Text Import",
@@ -922,20 +927,17 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
 
-                    // Clear All App Data Card
                     ActionTile(
                         icon = Icons.Default.DeleteForever,
                         title = "Clear All App Data",
                         subtitle = "Wipe database, sessions and restore default settings",
-                        onClick = {
-                            showClearAllDataDialog = true
-                        }
+                        onClick = { showClearAllDataDialog = true }
                     )
                 }
             }
         }
 
-        // Section 5: External Integrations
+        // Section 4: External Integrations
         item {
             Text(
                 text = "INTEGRATIONS",
@@ -952,7 +954,7 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -1015,7 +1017,7 @@ fun SettingsScreen(
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error
                                 ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
                             ) {
                                 Text("Disconnect")
                             }
@@ -1056,7 +1058,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 6: Offline Guarantee & About
+        // Section 5: Offline Guarantee & About
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1064,7 +1066,7 @@ fun SettingsScreen(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                 ),
-                border = androidx.compose.foundation.BorderStroke(
+                border = BorderStroke(
                     1.dp,
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                 )
@@ -1100,7 +1102,6 @@ fun SettingsScreen(
             }
         }
 
-        // Footer with motto and copyright
         item {
             Column(
                 modifier = Modifier
@@ -1282,8 +1283,14 @@ fun GoalEditDialog(
     onDismiss: () -> Unit,
     onSave: (Int) -> Unit
 ) {
-    var hours by remember { mutableStateOf((currentMinutes / 60).toString()) }
-    var mins by remember { mutableStateOf((currentMinutes % 60).toString()) }
+    var hours by remember(currentMinutes) { mutableStateOf((currentMinutes / 60).coerceAtLeast(0).toString()) }
+    var mins by remember(currentMinutes) { mutableStateOf((currentMinutes % 60).coerceAtLeast(0).toString()) }
+
+    val validGoal = remember(hours, mins) {
+        val parsedHours = hours.toIntOrNull() ?: -1
+        val parsedMinutes = mins.toIntOrNull() ?: -1
+        parsedHours >= 0 && parsedMinutes in 0..59
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1292,22 +1299,25 @@ fun GoalEditDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = hours,
-                    onValueChange = { hours = it },
+                    onValueChange = { hours = it.filter { ch -> ch.isDigit() } },
                     label = { Text("Hours") },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
                 OutlinedTextField(
                     value = mins,
-                    onValueChange = { mins = it },
+                    onValueChange = { mins = it.filter { ch -> ch.isDigit() } },
                     label = { Text("Minutes") },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
             }
         },
         confirmButton = {
             Button(
+                enabled = validGoal,
                 onClick = {
                     val h = hours.toIntOrNull() ?: 0
                     val m = mins.toIntOrNull() ?: 0
@@ -1330,11 +1340,14 @@ fun formatReminderDays(daysStr: String): String {
     val weekdays = listOf("MON", "TUE", "WED", "THU", "FRI")
     val weekends = listOf("SAT", "SUN")
 
-    val parts = upper.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    val parts = upper.split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
     return when {
-        parts.containsAll(allDays) && parts.size >= 7 -> "Every day"
-        parts.containsAll(weekdays) && parts.size == 5 -> "Weekdays (Mon-Fri)"
-        parts.containsAll(weekends) && parts.size == 2 -> "Weekends (Sat-Sun)"
+        parts.containsAll(allDays) -> "Every day"
+        parts.containsAll(weekdays) && parts.size >= 5 -> "Weekdays (Mon-Fri)"
+        parts.containsAll(weekends) && parts.size >= 2 -> "Weekends (Sat-Sun)"
         parts.isNotEmpty() -> parts.joinToString(", ") {
             it.take(3).lowercase().replaceFirstChar { c -> c.uppercase() }
         }
@@ -1352,10 +1365,11 @@ fun AddReminderDialog(
     var minute by remember { mutableStateOf("00") }
     var isPm by remember { mutableStateOf(true) }
     var selectedFrequency by remember { mutableStateOf("Every day") }
+
     val parsedHour12 = hour12.toIntOrNull()
     val parsedMinute = minute.toIntOrNull()
     val hasValidTime = parsedHour12 != null && parsedHour12 in 1..12 &&
-            parsedMinute != null && parsedMinute in 0..59
+        parsedMinute != null && parsedMinute in 0..59
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1369,6 +1383,7 @@ fun AddReminderDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = hour12,
@@ -1389,6 +1404,7 @@ fun AddReminderDialog(
                         isError = parsedMinute == null || parsedMinute !in 0..59
                     )
                 }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -1430,18 +1446,22 @@ fun AddReminderDialog(
                 enabled = label.isNotBlank() && hasValidTime,
                 onClick = {
                     if (!hasValidTime) return@Button
+
                     val parsedH12 = requireNotNull(parsedHour12)
                     val m = requireNotNull(parsedMinute)
+
                     val h24 = when {
                         isPm && parsedH12 < 12 -> parsedH12 + 12
                         !isPm && parsedH12 == 12 -> 0
                         else -> parsedH12
                     }
+
                     val days = when (selectedFrequency) {
                         "Weekdays" -> "Mon,Tue,Wed,Thu,Fri"
                         "Weekends" -> "Sat,Sun"
                         else -> "Mon,Tue,Wed,Thu,Fri,Sat,Sun"
                     }
+
                     onSave(
                         ReminderEntity(
                             title = label.ifBlank { "Study Session" },

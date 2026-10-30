@@ -30,6 +30,7 @@ import com.niloy.focentra.engine.SessionMode
 import com.niloy.focentra.engine.TimerStatus
 import com.niloy.focentra.ui.components.*
 import com.niloy.focentra.viewmodel.MainViewModel
+import com.niloy.focentra.viewmodel.NotificationType
 
 @Composable
 fun TimerScreen(
@@ -245,6 +246,178 @@ fun TimerScreen(
                 )
             }
         } else {
+    // Check for Overdue Revision Blocker
+    val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
+    val dbRevisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
+    val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
+    val now = System.currentTimeMillis()
+
+    val overdueRevision = remember(activeNotifications, dbRevisionSkips, revisionHistory) {
+        activeNotifications.firstOrNull { notif ->
+            if (notif.type != NotificationType.REVISION_DUE) return@firstOrNull false
+            val skips = dbRevisionSkips.filter {
+                it.subjectName.equals(notif.subjectName, ignoreCase = true) &&
+                it.chapterName.equals(notif.chapterName, ignoreCase = true)
+            }
+            val skipCount = skips.size
+            val hasActiveUnexpiredSkip = skipCount < 5 && skips.any { it.scheduledRecapTimestamp > now }
+            if (hasActiveUnexpiredSkip) return@firstOrNull false
+
+            val requiredMins = if (skipCount >= 5) 600 else 60
+            val completedMins = revisionHistory.filter {
+                it.subjectName.equals(notif.subjectName, ignoreCase = true) &&
+                it.chapterName.equals(notif.chapterName, ignoreCase = true) &&
+                it.timestamp >= notif.timestamp
+            }.sumOf { it.durationMinutes }
+
+            completedMins < requiredMins
+        }
+    }
+
+    var showDismissDialog by remember { mutableStateOf(false) }
+
+    if (showDismissDialog && overdueRevision != null) {
+        val currentSkips = dbRevisionSkips.count {
+            it.subjectName.equals(overdueRevision.subjectName, ignoreCase = true) &&
+            it.chapterName.equals(overdueRevision.chapterName, ignoreCase = true)
+        }
+        SkipRevisionDialog(
+            subjectName = overdueRevision.subjectName,
+            chapterName = overdueRevision.chapterName,
+            currentSkipCount = currentSkips,
+            onDismiss = { showDismissDialog = false },
+            onConfirmSkip = { reason, recapTs ->
+                viewModel.recordRevisionSkip(
+                    overdueRevision.subjectName,
+                    overdueRevision.chapterName,
+                    reason,
+                    recapTs
+                ) { success, msg ->
+                    if (success) {
+                        showDismissDialog = false
+                    } else {
+                        warningTitle = "Dismiss Failed"
+                        warningMessage = msg
+                        showSelectionWarningDialog = true
+                    }
+                }
+            }
+        )
+    }
+
+    if (overdueRevision != null) {
+        val currentSkips = dbRevisionSkips.count {
+            it.subjectName.equals(overdueRevision.subjectName, ignoreCase = true) &&
+            it.chapterName.equals(overdueRevision.chapterName, ignoreCase = true)
+        }
+        // Blank Screen View with 2 Buttons: Revision and Dismiss
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF090A10))
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(56.dp)
+                    )
+
+                    Text(
+                        text = "রিভিশন দেওয়া আবশ্যক",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "«${overdueRevision.chapterName}» (${overdueRevision.subjectName})",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = if (currentSkips >= 5) {
+                            "আপনি এই অধ্যায়টি সর্বোচ্চ ৫ বার Dismiss করেছেন! অন্য কোনো সাবজেক্ট পড়ার আগে এই অধ্যায় ১০ ঘণ্টা রিভিশন করা বাধ্যতামূলক।"
+                        } else {
+                            "Ebbinghaus Forgetting Curve অনুযায়ী এই অধ্যায়ের রিভিশন দেওয়া বাকি আছে। রিভিশন না দিলে অন্য কোনো সাবজেক্টের টাইমার অন করা যাবে না।"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (currentSkips >= 5) {
+                                    warningTitle = "Dismiss Limit Reached"
+                                    warningMessage = "আপনি ইতোমধ্যে ৫ বার Dismiss করেছেন। এখন এই অধ্যায় ১০ ঘণ্টা রিভিশন পড়তে হবে।"
+                                    showSelectionWarningDialog = true
+                                } else {
+                                    showDismissDialog = true
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Dismiss", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.timerEngine.configureSession(
+                                    mode = SessionMode.STOPWATCH,
+                                    subject = overdueRevision.subjectName,
+                                    selectedChapter = overdueRevision.chapterName,
+                                    topic = "Mandatory Revision"
+                                )
+                                viewModel.timerEngine.startSession()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Revision", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+        }
+    } else {
             // Setup & Configuration View
             Column(
                 modifier = Modifier
@@ -253,6 +426,39 @@ fun TimerScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+        // Informational Scheduled Revision Banner (If any future revision is scheduled)
+        val activeSkips = dbRevisionSkips.filter { it.scheduledRecapTimestamp > now }
+        if (activeSkips.isNotEmpty()) {
+            val nextSkip = activeSkips.minByOrNull { it.scheduledRecapTimestamp }!!
+            val dateFormatted = remember(nextSkip.scheduledRecapTimestamp) {
+                java.text.SimpleDateFormat("MMM d, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(nextSkip.scheduledRecapTimestamp))
+            }
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "আপনার «${nextSkip.chapterName}» (${nextSkip.subjectName}) অধ্যায়ের রিভিশন $dateFormatted তারিখে স্কেজুল করা আছে।",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // Mode Selector Tabs
@@ -769,5 +975,6 @@ fun TimerScreen(
             }
         }
     }
+}
 }
 }

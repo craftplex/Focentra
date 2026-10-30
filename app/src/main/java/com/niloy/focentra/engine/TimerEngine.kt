@@ -296,6 +296,10 @@ class TimerEngine private constructor(
         val safeFocused = sessionTotals.focusedSeconds.coerceAtLeast(1L)
         val safeDuration = sessionDuration.coerceAtLeast(1L)
 
+        val effectiveTopic = if (currentState.selectedChapter.isNotBlank()) {
+            if (currentState.topic.isNotBlank()) "${currentState.selectedChapter} - ${currentState.topic}" else currentState.selectedChapter
+        } else currentState.topic
+
         val sessionEntity = StudySessionEntity(
             startTime = if (sessionStartMs > 0) sessionStartMs else now - (safeDuration * 1000),
             endTime = now,
@@ -304,7 +308,7 @@ class TimerEngine private constructor(
             pausedSeconds = sessionTotals.pausedSeconds,
             sessionType = currentState.mode.name,
             subject = currentState.subject,
-            topic = currentState.topic,
+            topic = effectiveTopic,
             goal = currentState.goal,
             targetId = currentState.targetId,
             tags = currentState.tags.joinToString(","),

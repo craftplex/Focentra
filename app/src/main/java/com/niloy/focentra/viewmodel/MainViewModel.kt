@@ -282,6 +282,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val compTime = if (newTapCount == 3) now else 0L
         viewModelScope.launch {
             repository.updateChapter(chapter.copy(tapCount = newTapCount, status = newStatus, lastStudiedTimestamp = now, completedTimestamp = compTime))
+            if (newTapCount == 3) {
+                StudyReminderNotifications.scheduleEbbinghausRevisions(getApplication(), chapter.subjectName, chapter.chapterName, compTime)
+            }
         }
     }
 
@@ -302,6 +305,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             repository.updateChapter(chapter.copy(status = newStatus, tapCount = newTapCount, lastStudiedTimestamp = now, completedTimestamp = compTime))
+            if (newTapCount == 3) {
+                StudyReminderNotifications.scheduleEbbinghausRevisions(getApplication(), chapter.subjectName, chapter.chapterName, compTime)
+            }
         }
     }
 
@@ -662,12 +668,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Boolean, String) -> Unit
     ) {
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val maxAllowedDate = now + (4 * 24 * 3600 * 1000L) // 4 Days limit
+            if (scheduledRecapTimestamp > maxAllowedDate) {
+                onResult(false, "সিলেক্ট করা তারিখ ও সময় অবশ্যই আগামী ৪ দিনের মধ্যে হতে হবে।")
+                return@launch
+            }
+
             val currentSkips = dbRevisionSkips.value.count {
                 it.subjectName.equals(subjectName, ignoreCase = true) &&
                 it.chapterName.equals(chapterName, ignoreCase = true)
             }
             if (currentSkips >= 5) {
-                onResult(false, "Maximum 5 skips allowed for this chapter! You must complete 15 hours of revision for «$chapterName» before starting other subjects.")
+                onResult(false, "আপনি সর্বোচ্চ ৫ বার রিভিশন Dismiss করেছেন! অন্য কোনো সাবজেক্টের টাইমার অন করতে হলে আপনাকে «$chapterName» অধ্যায় ১০ ঘণ্টা রিভিশন পড়তে হবে।")
                 return@launch
             }
 
@@ -676,7 +689,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 subjectName = subjectName,
                 chapterName = chapterName,
                 reason = reason.trim(),
-                skippedAtTimestamp = System.currentTimeMillis(),
+                skippedAtTimestamp = now,
                 scheduledRecapTimestamp = scheduledRecapTimestamp
             )
             repository.insertRevisionSkip(skipEntity)
@@ -691,16 +704,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val recapNotif = NotificationEntity(
                 id = "recap_scheduled_${skipEntity.id}",
                 type = NotificationType.RECAP_REMINDER.name,
-                title = "Revision Recap Scheduled",
-                message = "Revision for «$chapterName» ($subjectName) skipped and scheduled for recap.",
+                title = "রিভিশন রিক্যাপ স্কেজুল করা হয়েছে",
+                message = "«$chapterName» ($subjectName) এর রিভিশন ডিসমিস করা হয়েছে এবং রিক্যাপ স্কেজুল করা হয়েছে।",
                 subjectName = subjectName,
                 chapterName = chapterName,
-                timestamp = System.currentTimeMillis()
+                timestamp = now
             )
             repository.insertNotification(recapNotif)
 
-            _snackbarMessage.emit("Revision skipped. Recap scheduled successfully!")
-            onResult(true, "Skip recorded successfully.")
+            _snackbarMessage.emit("রিভিশন ডিসমিস করা হয়েছে এবং রিক্যাপ স্কেজুল করা হয়েছে।")
+            onResult(true, "ডিসমিস সফলভাবে রেকর্ড করা হয়েছে।")
         }
     }
 
@@ -722,7 +735,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 continue // Unblocked because user explicitly skipped it and recap time has not arrived
             }
 
-            val requiredMins = if (skipCount >= 5) 900 else 60
+            val requiredMins = if (skipCount >= 5) 600 else 60 // 10 hours if skip count >= 5, else 1 hour
             val completedMins = revisionHistory.value.filter {
                 it.subjectName.equals(item.subjectName, ignoreCase = true) &&
                 it.chapterName.equals(item.chapterName, ignoreCase = true) &&
@@ -733,11 +746,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val isTargetMatching = targetSubject.trim().equals(item.subjectName.trim(), ignoreCase = true) &&
                         targetChapter.trim().equals(item.chapterName.trim(), ignoreCase = true)
                 if (!isTargetMatching) {
-                    val reqHoursText = if (requiredMins >= 60) "${requiredMins / 60}h" else "${requiredMins}m"
-                    val skipMsg = if (skipCount >= 5) " (Maximum 5 skips reached - 15h study required)" else ""
+                    val reqHoursText = if (requiredMins >= 60) "${requiredMins / 60} ঘণ্টা" else "${requiredMins} মিনিট"
+                    val skipMsg = if (skipCount >= 5) " (সর্বোচ্চ ৫ বার Dismiss অতিক্রম হয়েছে - ১০ ঘণ্টা পড়া বাধ্যতামূলক)" else ""
                     return Pair(
                         true,
-                        "You must complete at least $reqHoursText of revision for «${item.chapterName}» in ${item.subjectName} or skip it before starting timer for other subjects.$skipMsg"
+                        "অন্য কোনো সাবজেক্টের টাইমার চালু করার আগে আপনাকে «${item.chapterName}» ($item.subjectName) অধ্যায়ের অন্তত $reqHoursText রিভিশন সম্পন্ন করতে হবে।$skipMsg"
                     )
                 }
             }

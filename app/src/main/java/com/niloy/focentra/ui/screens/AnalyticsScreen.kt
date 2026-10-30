@@ -41,6 +41,7 @@ fun AnalyticsScreen(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
 
     val totalHrs = periodStats.totalFocusedSeconds / 3600
     val totalMins = (periodStats.totalFocusedSeconds % 3600) / 60
@@ -336,7 +337,8 @@ fun AnalyticsScreen(
             ChapterStudyReportSection(
                 sessions = sessions,
                 chapters = chapters,
-                subjects = subjects
+                subjects = subjects,
+                revisionHistory = revisionHistory
             )
         }
 
@@ -561,19 +563,34 @@ fun AnalyticsScreen(
 fun ChapterStudyReportSection(
     sessions: List<com.niloy.focentra.data.local.entity.StudySessionEntity>,
     chapters: List<com.niloy.focentra.data.local.entity.ChapterEntity>,
-    subjects: List<com.niloy.focentra.data.local.entity.SubjectEntity>
+    subjects: List<com.niloy.focentra.data.local.entity.SubjectEntity>,
+    revisionHistory: List<com.niloy.focentra.viewmodel.RevisionRecord> = emptyList()
 ) {
     val expandedSubjects = remember { mutableStateMapOf<Long, Boolean>() }
 
-    val chapterStudyMap = remember(sessions, chapters) {
+    val chapterStudyMap = remember(sessions, chapters, revisionHistory) {
         val map = mutableMapOf<Long, Long>()
         sessions.forEach { s ->
             val matchingCh = chapters.find { ch ->
                 ch.subjectName.equals(s.subject, ignoreCase = true) &&
-                    (s.topic.contains(ch.chapterName, ignoreCase = true) || ch.chapterName.contains(s.topic, ignoreCase = true) && s.topic.isNotBlank())
+                    (s.topic.contains(ch.chapterName, ignoreCase = true) ||
+                     ch.chapterName.contains(s.topic, ignoreCase = true) && s.topic.isNotBlank() ||
+                     s.notes.contains(ch.chapterName, ignoreCase = true) ||
+                     s.goal.contains(ch.chapterName, ignoreCase = true) ||
+                     s.tags.contains(ch.chapterName, ignoreCase = true))
             }
             if (matchingCh != null) {
                 map[matchingCh.id] = (map[matchingCh.id] ?: 0L) + (s.actualFocusedSeconds / 60)
+            }
+        }
+        revisionHistory.forEach { rev ->
+            val matchingCh = chapters.find { ch ->
+                ch.subjectName.equals(rev.subjectName, ignoreCase = true) &&
+                    (rev.chapterName.contains(ch.chapterName, ignoreCase = true) ||
+                     ch.chapterName.contains(rev.chapterName, ignoreCase = true) && rev.chapterName.isNotBlank())
+            }
+            if (matchingCh != null) {
+                map[matchingCh.id] = (map[matchingCh.id] ?: 0L) + rev.durationMinutes
             }
         }
         map

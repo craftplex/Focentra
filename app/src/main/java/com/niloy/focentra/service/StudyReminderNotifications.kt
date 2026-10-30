@@ -209,6 +209,37 @@ object StudyReminderNotifications {
         }
     }
 
+    fun scheduleEbbinghausRevisions(context: Context, subjectName: String, chapterName: String, completionTimestamp: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intervals = listOf(
+            Pair("1d", 1 * 24 * 3600 * 1000L),
+            Pair("3d", 3 * 24 * 3600 * 1000L),
+            Pair("7d", 7 * 24 * 3600 * 1000L),
+            Pair("15d", 15 * 24 * 3600 * 1000L),
+            Pair("30d", 30 * 24 * 3600 * 1000L)
+        )
+
+        intervals.forEachIndexed { index, (stage, offsetMs) ->
+            val triggerTime = completionTimestamp + offsetMs
+            if (triggerTime > System.currentTimeMillis()) {
+                val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+                    action = ACTION_RECAP_ALARM
+                    data = Uri.parse("focentra://ebbinghaus/$stage/$completionTimestamp")
+                    putExtra(EXTRA_SUBJECT_NAME, subjectName)
+                    putExtra(EXTRA_CHAPTER_NAME, chapterName)
+                    putExtra(EXTRA_RECAP_STAGE, stage)
+                }
+                val pi = PendingIntent.getBroadcast(
+                    context,
+                    (completionTimestamp xor (offsetMs + index)).toInt(),
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pi)
+            }
+        }
+    }
+
     fun post(context: Context, notificationId: Int, title: String, message: String): Boolean {
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

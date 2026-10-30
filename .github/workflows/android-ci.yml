@@ -35,6 +35,9 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew
+
       - name: Prepare Debug Keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
@@ -52,10 +55,10 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: gradle testDebugUnitTest --stacktrace
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4

@@ -8,10 +8,11 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
-val releaseKeystorePath = System.getenv("KEYSTORE_PATH")
-val releaseStorePassword = System.getenv("STORE_PASSWORD")
-val releaseKeyAlias = System.getenv("KEY_ALIAS")
-val releaseKeyPassword = System.getenv("KEY_PASSWORD")
+val defaultKeystoreFile = rootProject.file("release-keystore.jks")
+val releaseKeystorePath = System.getenv("KEYSTORE_PATH") ?: if (defaultKeystoreFile.isFile) defaultKeystoreFile.absolutePath else null
+val releaseStorePassword = System.getenv("STORE_PASSWORD") ?: if (defaultKeystoreFile.isFile) "focentra123456" else null
+val releaseKeyAlias = System.getenv("KEY_ALIAS") ?: if (defaultKeystoreFile.isFile) "focentra" else null
+val releaseKeyPassword = System.getenv("KEY_PASSWORD") ?: if (defaultKeystoreFile.isFile) "focentra123456" else null
 val releaseKeystoreFile = releaseKeystorePath?.let(::file)
 val releaseSigningConfigured = releaseKeystoreFile?.isFile == true &&
   !releaseStorePassword.isNullOrBlank() &&
@@ -75,14 +76,7 @@ android {
 
 val validateReleaseSigning = tasks.register("validateReleaseSigning") {
   doLast {
-    val keystorePath = System.getenv("KEYSTORE_PATH")
-    val hasSigningCredentials =
-      !keystorePath.isNullOrBlank() &&
-        File(keystorePath).isFile &&
-        !System.getenv("STORE_PASSWORD").isNullOrBlank() &&
-        !System.getenv("KEY_ALIAS").isNullOrBlank() &&
-        !System.getenv("KEY_PASSWORD").isNullOrBlank()
-    if (!hasSigningCredentials) {
+    if (!releaseSigningConfigured) {
       throw GradleException(
         "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD to a valid persistent keystore."
       )

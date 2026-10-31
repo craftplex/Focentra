@@ -9,11 +9,15 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to publish (for example, v8.0.0)'
-        required: true
+        description: 'Release tag to publish (for example, v8.0.2)'
+        required: false
+        default: 'v8.0.2'
 
 permissions:
   contents: write
+
+env:
+  APP_VERSION: v8.0.2
 
 jobs:
   build:
@@ -98,13 +102,23 @@ jobs:
 
       - name: Copy & Rename APK
         run: |
-          cp app/build/outputs/apk/release/app-release.apk focentra-${{ env.APP_VERSION }}-release.apk
+          APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n1)
+          if [ -z "$APK_FILE" ]; then
+            echo "::error::No release APK found in app/build/outputs/apk/release/"
+            exit 1
+          fi
+          echo "Found APK: $APK_FILE"
+          cp "$APK_FILE" "focentra-${APP_VERSION}-release.apk"
+          cp "$APK_FILE" focentra-release.apk
+          ls -la focentra*.apk
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: focentra-release-apk
-          path: focentra-${{ env.APP_VERSION }}-release.apk
+          path: |
+            focentra-*.apk
+            app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Create or Update GitHub Release
@@ -113,7 +127,9 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || env.APP_VERSION }}
           name: ${{ github.event.inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || format('Focentra {0}', env.APP_VERSION) }}
-          files: focentra-${{ env.APP_VERSION }}-release.apk
+          files: |
+            focentra-*.apk
+            app/build/outputs/apk/release/*.apk
           generate_release_notes: true
           draft: false
           prerelease: false

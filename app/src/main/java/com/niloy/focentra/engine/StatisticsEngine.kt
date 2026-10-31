@@ -1,402 +1,552 @@
-package com.niloy.focentra.ui.screens
+package com.niloy.focentra.engine
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AdsClick
-import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.NotificationsNone
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.niloy.focentra.viewmodel.AppNotification
-import com.niloy.focentra.viewmodel.MainViewModel
-import com.niloy.focentra.viewmodel.NotificationType
+import com.niloy.focentra.data.local.entity.StudySessionEntity
+import com.niloy.focentra.data.repository.calculateStreak
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import java.util.*
+import kotlin.math.roundToInt
 
-@Composable
-fun NotificationScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
-    val dbNotifications by viewModel.dbNotifications.collectAsStateWithLifecycle()
-    val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
-    val seenNotificationIds by viewModel.seenNotificationIds.collectAsStateWithLifecycle()
-    val notificationStateLoaded by viewModel.notificationStateLoaded.collectAsStateWithLifecycle()
-
-    var selectedFilter by remember { mutableStateOf("All") }
-
-    val allList = remember(dbNotifications, activeNotifications) {
-        fun resolveType(rawType: String?, title: String?): NotificationType {
-            val raw = rawType?.trim().orEmpty()
-            val titleText = title?.lowercase(Locale.ROOT).orEmpty()
-
-            if (titleText.contains("ambient focus") ||
-                titleText.contains("peak focus") ||
-                titleText.contains("night reflection") ||
-                titleText.contains("weekly focus digest") ||
-                titleText.contains("daily target") ||
-                titleText.contains("goal")
-            ) {
-                return NotificationType.DAILY_TARGET
-            }
-
-            val normalizedRaw = raw.uppercase(Locale.ROOT)
-            return try {
-                with(NotificationType.valueOf(normalizedRaw)) {
-                    if (this == NotificationType.GOAL_WARNING) NotificationType.DAILY_TARGET else this
-                }
-            } catch (_: Exception) {
-                when {
-                    normalizedRaw.contains("RECAP") || titleText.contains("recap") -> NotificationType.RECAP_REMINDER
-                    normalizedRaw.contains("REVISION") ||
-                        normalizedRaw.contains("INACTIVITY") ||
-                        titleText.contains("revision") ||
-                        titleText.contains("streak") ||
-                        titleText.contains("inactivity") -> NotificationType.REVISION_DUE
-                    else -> NotificationType.MOTIVATION
-                }
-            }
-        }
-
-        val mappedDb = dbNotifications.map { entity ->
-            AppNotification(
-                id = entity.id,
-                type = resolveType(entity.type, entity.title),
-                title = entity.title,
-                message = entity.message,
-                subjectName = entity.subjectName,
-                chapterName = entity.chapterName,
-                timestamp = entity.timestamp
-            )
-        }
-
-        val mappedActive = activeNotifications.map { notif ->
-            notif.copy(type = resolveType(notif.type.name, notif.title))
-        }
-
-        val mergedById = mutableMapOf<Long, AppNotification>()
-        mappedActive.forEach { mergedById[it.id] = it }
-        mappedDb.forEach { existing ->
-            val current = mergedById[existing.id]
-            if (current == null || existing.timestamp > current.timestamp) {
-                mergedById[existing.id] = existing
-            }
-        }
-
-        mergedById.values
-            .toList()
-            .sortedByDescending { it.timestamp }
-    }
-
-    val filteredNotifications = remember(allList, selectedFilter) {
-        when (selectedFilter) {
-            "Daily Target" -> allList.filter {
-                it.type == NotificationType.GOAL_WARNING ||
-                    it.type == NotificationType.DAILY_TARGET
-            }
-            "Revision Due" -> allList.filter {
-                it.type == NotificationType.REVISION_DUE ||
-                    it.type == NotificationType.INACTIVITY_WARNING
-            }
-            "Recap Reminder" -> allList.filter {
-                it.type == NotificationType.RECAP_REMINDER
-            }
-            "Motivation" -> allList.filter {
-                it.type == NotificationType.MOTIVATION
-            }
-            else -> allList
-        }
-    }
-
-    LaunchedEffect(notificationStateLoaded, filteredNotifications) {
-        if (notificationStateLoaded && filteredNotifications.isNotEmpty()) {
-            viewModel.markNotificationsAsSeen(filteredNotifications.map { it.id }.toSet())
-        }
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(12.dp))
-
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp)
-        ) {
-            val filters = listOf("All", "Daily Target", "Revision Due", "Recap Reminder", "Motivation")
-            items(filters) { filter ->
-                FilterChip(
-                    selected = selectedFilter == filter,
-                    onClick = { selectedFilter = filter },
-                    label = { Text(filter) },
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        }
-
-        if (filteredNotifications.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.NotificationsNone,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "No Notifications",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Your study reminders and revision alerts will be listed here.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 100.dp)
-            ) {
-                items(filteredNotifications, key = { it.id }) { notif ->
-                    val isUnseen = notificationStateLoaded && notif.id !in seenNotificationIds
-                    NotificationCardItem(
-                        notification = notif,
-                        isUnseen = isUnseen,
-                        onStartRevision = { subjectName, chapterName ->
-                            if (subjectName.isNotBlank()) {
-                                viewModel.startRevisionTimer(
-                                    durationMinutes = 30,
-                                    subjectName = subjectName,
-                                    chapterName = chapterName
-                                )
-                            }
-                        }
-                    )
-                }
-            }
-        }
-    }
+enum class TimePeriod(val label: String) {
+    TODAY("Today"),
+    YESTERDAY("Yesterday"),
+    THIS_WEEK("This Week"),
+    LAST_WEEK("Last Week"),
+    THIS_MONTH("This Month"),
+    LAST_MONTH("Last Month"),
+    THIS_YEAR("This Year"),
+    ALL_TIME("All Time")
 }
 
-@Composable
-private fun NotificationCardItem(
-    notification: AppNotification,
-    isUnseen: Boolean,
-    onStartRevision: (String, String) -> Unit
-) {
-    val cardBgColor = if (isUnseen) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-    }
+data class SubjectStudyStat(
+    val subject: String,
+    val colorHex: String,
+    val focusedMinutes: Long,
+    val percentage: Float,
+    val sessionCount: Int
+)
 
-    val cardBorderColor = if (isUnseen) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-    } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-    }
+data class BarChartItem(
+    val label: String,
+    val sublabel: String = "",
+    val studyMinutes: Float,
+    val goalMinutes: Float = 0f,
+    val isHighlighted: Boolean = false
+)
 
-    val iconVector = when (notification.type) {
-        NotificationType.REVISION_DUE -> Icons.Default.Autorenew
-        NotificationType.INACTIVITY_WARNING -> Icons.Default.Warning
-        NotificationType.GOAL_WARNING, NotificationType.DAILY_TARGET -> Icons.Default.AdsClick
-        NotificationType.RECAP_REMINDER -> Icons.Default.Schedule
-        NotificationType.MOTIVATION -> Icons.Default.Lightbulb
-    }
+data class HeatmapCell(
+    val dateEpochMs: Long,
+    val dateKey: String, // "YYYY-MM-DD"
+    val dayOfMonth: Int,
+    val dayOfWeek: Int, // 1 = Sun, 2 = Mon ...
+    val studyMinutes: Long,
+    val level: Int, // 0 = none, 1 = low (1-60m), 2 = med (61-180m), 3 = high (181-360m), 4 = max (360m+)
+    val sessionCount: Int,
+    val goalMinutes: Long,
+    val topSubject: String = ""
+)
 
-    val iconTint = when (notification.type) {
-        NotificationType.REVISION_DUE -> MaterialTheme.colorScheme.primary
-        NotificationType.INACTIVITY_WARNING -> Color(0xFFF59E0B)
-        NotificationType.GOAL_WARNING, NotificationType.DAILY_TARGET -> Color(0xFF10B981)
-        NotificationType.RECAP_REMINDER -> Color(0xFF818CF8)
-        NotificationType.MOTIVATION -> MaterialTheme.colorScheme.primary
-    }
+data class CognitiveFatigueMetrics(
+    val brainEnergyPercentage: Int = 100, // 0 - 100%
+    val fatigueLevel: String = "OPTIMAL", // OPTIMAL, MODERATE, HIGH, EXHAUSTED
+    val recommendedBreakMinutes: Int = 15,
+    val burnoutRiskScore: Int = 10 // 0 - 100
+)
 
-    val timeFormatted = remember(notification.timestamp) {
-        val notificationDate = Calendar.getInstance().apply { timeInMillis = notification.timestamp }
-        val today = Calendar.getInstance()
-        val pattern = if (
-            notificationDate.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-            notificationDate.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
-        ) {
-            "hh:mm a"
-        } else {
-            "MMM d, hh:mm a"
-        }
-        SimpleDateFormat(pattern, Locale.getDefault()).format(Date(notification.timestamp))
-    }
+data class SubjectMemoryRetention(
+    val subject: String,
+    val daysSinceLastStudied: Int,
+    val retentionPercentage: Int // 0 - 100%
+)
 
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(iconTint.copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = iconVector,
-                            contentDescription = null,
-                            tint = iconTint,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+data class PersonalRecords(
+    val longestSessionMinutes: Long = 0L,
+    val longestSessionSubject: String = "-",
+    val maxDayMinutes: Long = 0L,
+    val maxDayDate: String = "-",
+    val maxWeekMinutes: Long = 0L,
+    val longestStreakDays: Int = 0,
+    val totalAllTimeMinutes: Long = 0L,
+    val totalAllTimeSessions: Int = 0
+)
 
-                    Text(
-                        text = notification.title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+data class PeriodStatistics(
+    val period: TimePeriod,
+    val totalFocusedSeconds: Long = 0L,
+    val totalPausedSeconds: Long = 0L,
+    val sessionCount: Int = 0,
+    val averageSessionMinutes: Long = 0L,
+    val longestSessionMinutes: Long = 0L,
+    val shortestSessionMinutes: Long = 0L,
+    val averageProductivityRating: Float = 0f,
+    val totalDistractions: Int = 0,
+    val focusScore: Int = 0, // 0 - 100
+    val goalCompletionRate: Float = 0f, // 0 - 100%
+    val mostProductiveDay: String = "-",
+    val mostProductiveHour: String = "-",
+    val mostStudiedSubject: String = "-",
+    val mostStudiedTopic: String = "-",
+    val chartData: List<BarChartItem> = emptyList(),
+    val hourlyDistribution: List<Float> = List(24) { 0f }, // 00h to 23h
+    val subjectStats: List<SubjectStudyStat> = emptyList(),
+    val cognitiveFatigue: CognitiveFatigueMetrics = CognitiveFatigueMetrics(),
+    val memoryRetentions: List<SubjectMemoryRetention> = emptyList(),
+    val smartInsights: List<String> = emptyList()
+)
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = timeFormatted,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
+object StatisticsEngine {
 
-                    if (isUnseen) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "NEW",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 9.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = notification.message,
-                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+    fun calculatePeriodStats(
+        sessions: List<StudySessionEntity>,
+        period: TimePeriod,
+        dailyGoalMinutes: Int = 480
+    ): PeriodStatistics {
+        val filtered = filterSessionsByPeriod(sessions, period)
+        if (filtered.isEmpty()) {
+            return PeriodStatistics(
+                period = period,
+                smartInsights = listOf("Start your first study session to generate insights.")
             )
+        }
 
-            if (notification.type == NotificationType.REVISION_DUE &&
-                notification.subjectName.isNotBlank()
-            ) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = {
-                        onStartRevision(notification.subjectName, notification.chapterName)
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Start 30m Revision",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                    )
+        val totalFocusedSec = filtered.sumOf { it.actualFocusedSeconds }
+        val totalPausedSec = filtered.sumOf { it.pausedSeconds }
+        val count = filtered.size
+        val avgSec = if (count > 0) totalFocusedSec / count else 0L
+        val longestSec = filtered.maxOfOrNull { it.actualFocusedSeconds } ?: 0L
+        val shortestSec = filtered.minOfOrNull { it.actualFocusedSeconds } ?: 0L
+
+        val avgRating = filtered.map { it.productivityRating }.average().toFloat()
+        val totalDistractions = filtered.sumOf { it.distractionCount }
+
+        // Focus Score calculation (0 to 100)
+        // Factors: Productivity rating (40%), Distraction penalty (20%), Pause ratio (20%), Completion status (20%)
+        val ratingScore = (avgRating / 5.0f) * 40f
+        val distractionPenalty = (totalDistractions.toFloat() / count.coerceAtLeast(1) * 5f).coerceAtMost(20f)
+        val pauseRatio = if (totalFocusedSec + totalPausedSec > 0) {
+            1.0f - (totalPausedSec.toFloat() / (totalFocusedSec + totalPausedSec))
+        } else 1.0f
+        val pauseScore = (pauseRatio * 20f).coerceIn(0f, 20f)
+        val completionRate = filtered.count { it.completionStatus == "COMPLETED" }.toFloat() / count
+        val completionScore = completionRate * 20f
+
+        val calculatedFocusScore = (ratingScore + (20f - distractionPenalty) + pauseScore + completionScore).roundToInt().coerceIn(0, 100)
+
+        // Subject breakdown
+        val subjectGroups = filtered.groupBy { it.subject }
+        val colorPalette = listOf("#6366F1", "#10B981", "#F59E0B", "#EC4899", "#8B5CF6", "#06B6D4", "#EF4444", "#3B82F6", "#14B8A6")
+        val subjectStats = subjectGroups.entries.mapIndexed { idx, entry ->
+            val subFocusedSec = entry.value.sumOf { it.actualFocusedSeconds }
+            val pct = if (totalFocusedSec > 0) (subFocusedSec.toFloat() / totalFocusedSec) * 100f else 0f
+            SubjectStudyStat(
+                subject = entry.key,
+                colorHex = colorPalette[idx % colorPalette.size],
+                focusedMinutes = subFocusedSec / 60,
+                percentage = pct,
+                sessionCount = entry.value.size
+            )
+        }.sortedByDescending { it.focusedMinutes }
+
+        val mostStudiedSubject = subjectStats.firstOrNull()?.subject ?: "-"
+
+        // Topic breakdown
+        val mostStudiedTopic = filtered.filter { it.topic.isNotBlank() }
+            .groupBy { it.topic }
+            .maxByOrNull { entry -> entry.value.sumOf { it.actualFocusedSeconds } }
+            ?.key ?: "-"
+
+        // Hourly productivity (0 to 23)
+        val hourlyMins = FloatArray(24) { 0f }
+        val hourProductivityMap = mutableMapOf<Int, MutableList<Int>>()
+        val cal = Calendar.getInstance()
+        filtered.forEach { s ->
+            cal.timeInMillis = s.startTime
+            val h = cal.get(Calendar.HOUR_OF_DAY)
+            hourlyMins[h] += (s.actualFocusedSeconds / 60f)
+            hourProductivityMap.getOrPut(h) { mutableListOf() }.add(s.productivityRating)
+        }
+
+        val bestHourIdx = hourlyMins.indices.maxByOrNull { hourlyMins[it] } ?: 14
+        val bestHourStr = String.format("%02d:00 - %02d:00", bestHourIdx, (bestHourIdx + 1) % 24)
+
+        // Most productive day of week
+        val dayMinsMap = mutableMapOf<Int, Long>()
+        val dayRatingMap = mutableMapOf<Int, MutableList<Int>>()
+        filtered.forEach { s ->
+            cal.timeInMillis = s.startTime
+            val day = cal.get(Calendar.DAY_OF_WEEK)
+            dayMinsMap[day] = (dayMinsMap[day] ?: 0L) + s.actualFocusedSeconds
+            dayRatingMap.getOrPut(day) { mutableListOf() }.add(s.productivityRating)
+        }
+
+        val bestDayOfWeekInt = dayMinsMap.maxByOrNull { it.value }?.key ?: Calendar.MONDAY
+        val dayNames = arrayOf("", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+        val mostProductiveDay = if (bestDayOfWeekInt in 1..7) dayNames[bestDayOfWeekInt] else "Monday"
+
+        // Cognitive Fatigue & Brain Energy calculation
+        val todayStartMs = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val todaySessions = filtered.filter { it.startTime >= todayStartMs }
+        val todayFocusedMins = todaySessions.sumOf { it.actualFocusedSeconds } / 60
+        val fatigueDeduction = ((todayFocusedMins / 45) * 8).toInt().coerceAtMost(70)
+        val brainEnergyPct = (100 - fatigueDeduction).coerceIn(15, 100)
+
+        val fatigueLevelStr = when {
+            brainEnergyPct >= 80 -> "OPTIMAL"
+            brainEnergyPct >= 50 -> "MODERATE"
+            brainEnergyPct >= 30 -> "HIGH"
+            else -> "EXHAUSTED"
+        }
+
+        val recommendedBreakMins = when {
+            todayFocusedMins >= 240 -> 30
+            todayFocusedMins >= 120 -> 20
+            else -> 10
+        }
+
+        val burnoutRisk = ((todayFocusedMins / 360f) * 100f).toInt().coerceIn(5, 95)
+        val cognitiveFatigue = CognitiveFatigueMetrics(
+            brainEnergyPercentage = brainEnergyPct,
+            fatigueLevel = fatigueLevelStr,
+            recommendedBreakMinutes = recommendedBreakMins,
+            burnoutRiskScore = burnoutRisk
+        )
+
+        // Subject Memory Decay calculation
+        val memoryRetentions = subjectGroups.map { entry ->
+            val lastSessionTime = entry.value.maxOfOrNull { it.startTime } ?: System.currentTimeMillis()
+            val daysAgo = ((System.currentTimeMillis() - lastSessionTime) / (1000L * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+            val retention = (100 - (daysAgo * 12)).coerceIn(20, 100)
+            SubjectMemoryRetention(
+                subject = entry.key,
+                daysSinceLastStudied = daysAgo,
+                retentionPercentage = retention
+            )
+        }.sortedBy { it.retentionPercentage }
+
+        // Build Bar Chart Data based on period
+        val chartData = buildChartItems(filtered, period, dailyGoalMinutes.toFloat())
+
+        // Smart Offline Insights
+        val insights = mutableListOf<String>()
+        insights.add("Overall Focus Score: $calculatedFocusScore/100 across $count focus sessions.")
+
+        if (subjectStats.isNotEmpty()) {
+            val totalSubHoursStr = subjectStats.take(4).joinToString(", ") { "${it.subject}: ${String.format(Locale.getDefault(), "%.1fh", it.focusedMinutes / 60f)}" }
+            insights.add("Subject Study Time: $totalSubHoursStr")
+
+            val topSub = subjectStats.first()
+            insights.add("Most Studied Subject This Week / Period: «${topSub.subject}» with ${String.format(Locale.getDefault(), "%.1f", topSub.focusedMinutes / 60f)} hours (${topSub.percentage.toInt()}% of total study time).")
+        }
+
+        // Chapter level breakdown
+        val chapterMap = filtered.filter { it.topic.isNotBlank() }
+            .groupBy { "${it.subject} - ${it.topic}" }
+            .mapValues { entry -> entry.value.sumOf { it.actualFocusedSeconds } / 60 }
+
+        val topChapter = chapterMap.maxByOrNull { it.value }
+        if (topChapter != null && topChapter.value > 0) {
+            insights.add("Top Focused Chapter: «${topChapter.key}» (${topChapter.value / 60}h ${topChapter.value % 60}m studied).")
+        }
+
+        if (totalFocusedSec >= 3600) {
+            insights.add("Peak Productivity Window: Highest concentration around $bestHourStr.")
+        }
+        if (mostProductiveDay != "-") {
+            insights.add("Most Active Day: $mostProductiveDay recorded highest study volume.")
+        }
+        if (totalDistractions == 0) {
+            insights.add("Flawless Focus: Zero interruptions or distractions logged during this period!")
+        } else {
+            insights.add("Logged $totalDistractions distractions total (${String.format(Locale.getDefault(), "%.1f", totalDistractions.toFloat() / count)} avg/session).")
+        }
+
+        return PeriodStatistics(
+            period = period,
+            totalFocusedSeconds = totalFocusedSec,
+            totalPausedSeconds = totalPausedSec,
+            sessionCount = count,
+            averageSessionMinutes = avgSec / 60,
+            longestSessionMinutes = longestSec / 60,
+            shortestSessionMinutes = shortestSec / 60,
+            averageProductivityRating = avgRating,
+            totalDistractions = totalDistractions,
+            focusScore = calculatedFocusScore,
+            goalCompletionRate = (completionRate * 100f).coerceIn(0f, 100f),
+            mostProductiveDay = mostProductiveDay,
+            mostProductiveHour = bestHourStr,
+            mostStudiedSubject = mostStudiedSubject,
+            mostStudiedTopic = mostStudiedTopic,
+            chartData = chartData,
+            hourlyDistribution = hourlyMins.toList(),
+            subjectStats = subjectStats,
+            cognitiveFatigue = cognitiveFatigue,
+            memoryRetentions = memoryRetentions,
+            smartInsights = insights
+        )
+    }
+
+    private fun filterSessionsByPeriod(sessions: List<StudySessionEntity>, period: TimePeriod): List<StudySessionEntity> {
+        val now = Calendar.getInstance()
+        val startCal = Calendar.getInstance()
+
+        fun setStartOfDay(calendar: Calendar) {
+            calendar.set(Calendar.HOUR_OF_DAY, 0)
+            calendar.set(Calendar.MINUTE, 0)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+        }
+
+        when (period) {
+            TimePeriod.TODAY -> {
+                setStartOfDay(startCal)
+                return sessions.filter { it.startTime in startCal.timeInMillis..now.timeInMillis }
+            }
+            TimePeriod.YESTERDAY -> {
+                setStartOfDay(startCal)
+                startCal.add(Calendar.DAY_OF_YEAR, -1)
+                val end = startCal.timeInMillis - 1L
+                return sessions.filter { it.startTime in startCal.timeInMillis..end }
+            }
+            TimePeriod.THIS_WEEK -> {
+                startCal.firstDayOfWeek = Calendar.MONDAY
+                startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                setStartOfDay(startCal)
+                return sessions.filter { it.startTime in startCal.timeInMillis..now.timeInMillis }
+            }
+            TimePeriod.LAST_WEEK -> {
+                startCal.firstDayOfWeek = Calendar.MONDAY
+                startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                setStartOfDay(startCal)
+                val end = startCal.timeInMillis - 1L
+                startCal.add(Calendar.WEEK_OF_YEAR, -1)
+                val start = startCal.timeInMillis
+                return sessions.filter { it.startTime in start..end }
+            }
+            TimePeriod.THIS_MONTH -> {
+                startCal.set(Calendar.DAY_OF_MONTH, 1)
+                setStartOfDay(startCal)
+                return sessions.filter { it.startTime in startCal.timeInMillis..now.timeInMillis }
+            }
+            TimePeriod.LAST_MONTH -> {
+                startCal.set(Calendar.DAY_OF_MONTH, 1)
+                setStartOfDay(startCal)
+                val end = startCal.timeInMillis - 1L
+                startCal.add(Calendar.MONTH, -1)
+                startCal.set(Calendar.DAY_OF_MONTH, 1)
+                val start = startCal.timeInMillis
+                return sessions.filter { it.startTime in start..end }
+            }
+            TimePeriod.THIS_YEAR -> {
+                startCal.set(Calendar.DAY_OF_YEAR, 1)
+                setStartOfDay(startCal)
+                return sessions.filter { it.startTime in startCal.timeInMillis..now.timeInMillis }
+            }
+            TimePeriod.ALL_TIME -> return sessions
+        }
+    }
+
+    private fun buildChartItems(
+        sessions: List<StudySessionEntity>,
+        period: TimePeriod,
+        goalMinutes: Float
+    ): List<BarChartItem> {
+        val items = mutableListOf<BarChartItem>()
+        val cal = Calendar.getInstance()
+        val dfDay = SimpleDateFormat("EEE", Locale.getDefault())
+        val dfMonth = SimpleDateFormat("MMM", Locale.getDefault())
+
+        when (period) {
+            TimePeriod.TODAY, TimePeriod.YESTERDAY -> {
+                // Group by 4-hour intervals: 00-04, 04-08, 08-12, 12-16, 16-20, 20-24
+                val intervals = arrayOf("00-04", "04-08", "08-12", "12-16", "16-20", "20-24")
+                val sums = FloatArray(6) { 0f }
+                sessions.forEach { s ->
+                    cal.timeInMillis = s.startTime
+                    val h = cal.get(Calendar.HOUR_OF_DAY)
+                    val idx = (h / 4).coerceIn(0, 5)
+                    sums[idx] += (s.actualFocusedSeconds / 60f)
+                }
+                intervals.forEachIndexed { idx, label ->
+                    items.add(BarChartItem(label = label, studyMinutes = sums[idx], goalMinutes = goalMinutes / 6))
+                }
+            }
+            TimePeriod.THIS_WEEK, TimePeriod.LAST_WEEK -> {
+                // 7 days (Mon to Sun)
+                val dayMins = FloatArray(7) { 0f }
+                val dayLabels = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                sessions.forEach { s ->
+                    cal.timeInMillis = s.startTime
+                    val d = cal.get(Calendar.DAY_OF_WEEK)
+                    // Convert Calendar.DAY_OF_WEEK (1=Sun, 2=Mon ... 7=Sat) to index (0=Mon ... 6=Sun)
+                    val idx = if (d == Calendar.SUNDAY) 6 else d - 2
+                    if (idx in 0..6) {
+                        dayMins[idx] += (s.actualFocusedSeconds / 60f)
+                    }
+                }
+                dayLabels.forEachIndexed { idx, label ->
+                    items.add(BarChartItem(label = label, studyMinutes = dayMins[idx], goalMinutes = goalMinutes))
+                }
+            }
+            TimePeriod.THIS_MONTH, TimePeriod.LAST_MONTH -> {
+                // Group into 4 weeks
+                val weekMins = FloatArray(4) { 0f }
+                val weekLabels = arrayOf("W1 (1-7)", "W2 (8-14)", "W3 (15-21)", "W4 (22+)")
+                sessions.forEach { s ->
+                    cal.timeInMillis = s.startTime
+                    val day = cal.get(Calendar.DAY_OF_MONTH)
+                    val idx = when {
+                        day <= 7 -> 0
+                        day <= 14 -> 1
+                        day <= 21 -> 2
+                        else -> 3
+                    }
+                    weekMins[idx] += (s.actualFocusedSeconds / 60f)
+                }
+                weekLabels.forEachIndexed { idx, label ->
+                    items.add(BarChartItem(label = label, studyMinutes = weekMins[idx], goalMinutes = goalMinutes * 7))
+                }
+            }
+            TimePeriod.THIS_YEAR, TimePeriod.ALL_TIME -> {
+                // 12 months (Jan to Dec)
+                val monthMins = FloatArray(12) { 0f }
+                val monthLabels = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+                sessions.forEach { s ->
+                    cal.timeInMillis = s.startTime
+                    val m = cal.get(Calendar.MONTH)
+                    if (m in 0..11) {
+                        monthMins[m] += (s.actualFocusedSeconds / 60f)
+                    }
+                }
+                monthLabels.forEachIndexed { idx, label ->
+                    items.add(BarChartItem(label = label, studyMinutes = monthMins[idx], goalMinutes = goalMinutes * 30))
                 }
             }
         }
+        return items
+    }
+
+    fun buildHeatmapData(
+        sessions: List<StudySessionEntity>,
+        weeksBack: Int = 16,
+        dailyGoalMinutes: Int = 480
+    ): List<HeatmapCell> {
+        val focusedSecondsByDate = mutableMapOf<String, Long>()
+        val countByDate = mutableMapOf<String, Int>()
+        val topSubByDate = mutableMapOf<String, String>()
+
+        val cal = Calendar.getInstance()
+        sessions.forEach { s ->
+            cal.timeInMillis = s.startTime
+            val k = String.format("%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+            focusedSecondsByDate[k] = (focusedSecondsByDate[k] ?: 0L) + s.actualFocusedSeconds
+            countByDate[k] = (countByDate[k] ?: 0) + 1
+            topSubByDate[k] = s.subject
+        }
+
+        val cells = mutableListOf<HeatmapCell>()
+        val startCal = Calendar.getInstance()
+        // Align to start of week (Sunday or Monday)
+        startCal.add(Calendar.WEEK_OF_YEAR, -weeksBack)
+        startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        startCal.set(Calendar.HOUR_OF_DAY, 0)
+        startCal.set(Calendar.MINUTE, 0)
+        startCal.set(Calendar.SECOND, 0)
+        startCal.set(Calendar.MILLISECOND, 0)
+
+        val endCal = Calendar.getInstance()
+        val totalDays = weeksBack * 7 + 7
+
+        val temp = Calendar.getInstance()
+        temp.timeInMillis = startCal.timeInMillis
+
+        for (i in 0 until totalDays) {
+            val y = temp.get(Calendar.YEAR)
+            val m = temp.get(Calendar.MONTH) + 1
+            val d = temp.get(Calendar.DAY_OF_MONTH)
+            val dow = temp.get(Calendar.DAY_OF_WEEK)
+            val k = String.format("%04d-%02d-%02d", y, m, d)
+
+            val studyMins = (focusedSecondsByDate[k] ?: 0L) / 60
+            val sessionCnt = countByDate[k] ?: 0
+            val topSubject = topSubByDate[k] ?: ""
+
+            val level = when {
+                studyMins == 0L -> 0
+                studyMins <= 60L -> 1
+                studyMins <= 180L -> 2
+                studyMins <= 360L -> 3
+                else -> 4
+            }
+
+            cells.add(
+                HeatmapCell(
+                    dateEpochMs = temp.timeInMillis,
+                    dateKey = k,
+                    dayOfMonth = d,
+                    dayOfWeek = dow,
+                    studyMinutes = studyMins,
+                    level = level,
+                    sessionCount = sessionCnt,
+                    goalMinutes = dailyGoalMinutes.toLong(),
+                    topSubject = topSubject
+                )
+            )
+            temp.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return cells
+    }
+
+    fun calculatePersonalRecords(sessions: List<StudySessionEntity>): PersonalRecords {
+        if (sessions.isEmpty()) return PersonalRecords()
+
+        val longestSession = sessions.maxByOrNull { it.actualFocusedSeconds }
+        val longestMin = (longestSession?.actualFocusedSeconds ?: 0L) / 60
+        val longestSub = longestSession?.subject ?: "-"
+
+        // Day with max study
+        val dayMap = mutableMapOf<String, Long>()
+        val weekMap = mutableMapOf<String, Long>()
+        val cal = Calendar.getInstance()
+        sessions.forEach { s ->
+            cal.timeInMillis = s.startTime
+            val k = String.format("%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
+            dayMap[k] = (dayMap[k] ?: 0L) + s.actualFocusedSeconds
+
+            cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            val weekKey = String.format(
+                "%04d-%02d-%02d",
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH) + 1,
+                cal.get(Calendar.DAY_OF_MONTH)
+            )
+            weekMap[weekKey] = (weekMap[weekKey] ?: 0L) + s.actualFocusedSeconds
+        }
+        val maxDayEntry = dayMap.maxByOrNull { it.value }
+        val maxDayMins = (maxDayEntry?.value ?: 0L) / 60
+        val maxDayDate = maxDayEntry?.key ?: "-"
+        val maxWeekMinutes = (weekMap.values.maxOrNull() ?: 0L) / 60
+
+        val streak = calculateStreak(sessions)
+        val totalAllTimeMinutes = sessions.sumOf { it.actualFocusedSeconds } / 60
+
+        return PersonalRecords(
+            longestSessionMinutes = longestMin,
+            longestSessionSubject = longestSub,
+            maxDayMinutes = maxDayMins,
+            maxDayDate = maxDayDate,
+            maxWeekMinutes = maxWeekMinutes,
+            longestStreakDays = streak.longestStreak,
+            totalAllTimeMinutes = totalAllTimeMinutes,
+            totalAllTimeSessions = sessions.size
+        )
     }
 }

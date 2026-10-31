@@ -74,14 +74,23 @@ android {
   }
 }
 
-val validateReleaseSigning = tasks.register("validateReleaseSigning") {
-  doLast {
-    if (!releaseSigningConfigured) {
+abstract class ValidateReleaseSigningTask : DefaultTask() {
+  @get:Input
+  abstract val releaseSigningConfigured: Property<Boolean>
+
+  @TaskAction
+  fun validate() {
+    if (!releaseSigningConfigured.get()) {
       throw GradleException(
         "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD to a valid persistent keystore."
       )
     }
   }
+}
+
+val isReleaseConfigured = releaseSigningConfigured
+val validateReleaseSigning = tasks.register<ValidateReleaseSigningTask>("validateReleaseSigning") {
+  releaseSigningConfigured.set(isReleaseConfigured)
 }
 
 tasks.configureEach {

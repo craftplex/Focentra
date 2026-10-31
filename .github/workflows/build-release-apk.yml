@@ -57,6 +57,7 @@ jobs:
           fi
 
           echo "Configuring fallback release keystore..."
+          rm -f release-keystore.jks
           keytool -genkeypair -v -keystore release-keystore.jks -storepass focentra123456 -alias focentra -keypass focentra123456 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Focentra Release,O=Focentra,C=US"
           echo "KEYSTORE_FILE=$(pwd)/release-keystore.jks" >> "$GITHUB_ENV"
           echo "STORE_PASS=focentra123456" >> "$GITHUB_ENV"
@@ -108,6 +109,7 @@ jobs:
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           tag_name: ${{ github.event.inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || env.APP_VERSION }}
           name: ${{ github.event.inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || format('Focentra {0}', env.APP_VERSION) }}

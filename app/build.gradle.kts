@@ -21,12 +21,12 @@ val releaseSigningConfigured = releaseKeystoreFile?.isFile == true &&
 
 android {
   namespace = "com.niloy.focentra"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "com.niloy.focentra"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 66
     versionName = "8.0.2"
 

@@ -46,7 +46,24 @@ class FocentraApp : Application() {
         applicationScope.launch {
             // Check and update achievements on app start
             repository.checkAndUnlockAchievements()
-            StudyReminderScheduler.scheduleAll(this@FocentraApp, repository.allReminders.first())
+            val storedReminders = repository.allReminders.first()
+            val legacyDefaults = storedReminders.filter { reminder ->
+                (reminder.title == "Morning Focus Session" &&
+                    reminder.hour == 9 && reminder.minute == 0 &&
+                    reminder.message == "Ready for today's high-priority study?") ||
+                    (reminder.title == "Evening Goal Checkup" &&
+                        reminder.hour == 20 && reminder.minute == 0 &&
+                        reminder.message == "Keep your study streak alive today!")
+            }
+            legacyDefaults.forEach { reminder ->
+                StudyReminderScheduler.cancel(this@FocentraApp, reminder.id)
+                repository.deleteReminder(reminder)
+            }
+            StudyReminderScheduler.scheduleAll(
+                this@FocentraApp,
+                repository.allReminders.first(),
+                repository.allChapters.first()
+            )
         }
     }
 }

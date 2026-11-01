@@ -39,13 +39,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.niloy.focentra.ui.components.FocentraFloatingNavBar
 import com.niloy.focentra.ui.screens.*
 import com.niloy.focentra.ui.theme.FocentraTheme
-import com.niloy.focentra.service.StudyReminderNotifications
 import com.niloy.focentra.service.StudyReminderScheduler
 import com.niloy.focentra.viewmodel.MainViewModel
 import com.niloy.focentra.viewmodel.NavigationTab
-
-private fun postSystemNotification(context: android.content.Context, notif: com.niloy.focentra.viewmodel.AppNotification): Boolean =
-    StudyReminderNotifications.post(context, notif.id.hashCode(), notif.title, notif.message)
 
 class MainActivity : ComponentActivity() {
 
@@ -79,6 +75,19 @@ class MainActivity : ComponentActivity() {
             val isFullScreenFocus by viewModel.isFullScreenFocus.collectAsStateWithLifecycle()
             val timerState by viewModel.timerEngine.uiState.collectAsStateWithLifecycle()
             val reminders by viewModel.reminders.collectAsStateWithLifecycle()
+            val chapters by viewModel.chapters.collectAsStateWithLifecycle()
+            val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
+            val revisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
+            val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
+            val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+            val hasMandatoryRevision = remember(
+                activeNotifications,
+                revisionSkips,
+                revisionHistory,
+                sessions
+            ) {
+                viewModel.pendingMandatoryRevision() != null
+            }
 
             val isBottomBarVisible = remember { mutableStateOf(true) }
             val nestedScrollConnection = remember {
@@ -114,8 +123,8 @@ class MainActivity : ComponentActivity() {
                 if (granted) viewModel.retrySystemNotifications()
             }
 
-            LaunchedEffect(reminders) {
-                StudyReminderScheduler.scheduleAll(context, reminders)
+            LaunchedEffect(reminders, chapters) {
+                StudyReminderScheduler.scheduleAll(context, reminders, chapters)
             }
 
             LaunchedEffect(Unit) {
@@ -367,18 +376,14 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            LaunchedEffect(Unit) {
-                                viewModel.systemNotificationEvent.collect { notif ->
-                                    val posted = postSystemNotification(context, notif)
-                                    viewModel.acknowledgeSystemNotification(notif.id, posted)
-                                }
-                            }
-
                             val shouldShowBottomBar = currentTab != NavigationTab.SUBJECTS &&
                                     currentTab != NavigationTab.ACHIEVEMENTS &&
                                     currentTab != NavigationTab.PRESETS &&
                                     currentTab != NavigationTab.NOTIFICATIONS &&
-                                    currentTab != NavigationTab.REVISION_HUB
+                                    currentTab != NavigationTab.REVISION_HUB &&
+                                    !(currentTab == NavigationTab.TIMER &&
+                                        hasMandatoryRevision &&
+                                        timerState.status == com.niloy.focentra.engine.TimerStatus.IDLE)
 
                             AnimatedVisibility(
                                 visible = isBottomBarVisible.value && shouldShowBottomBar,

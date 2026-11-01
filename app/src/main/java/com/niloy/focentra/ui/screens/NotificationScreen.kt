@@ -165,7 +165,7 @@ fun NotificationScreen(
                         notification = notif,
                         isUnseen = isUnseen,
                         onStartRevision = { subjectName, _ ->
-                            viewModel.startRevisionTimer(30, subjectName, notif.chapterName)
+                            viewModel.startRevisionTimer(60, subjectName, notif.chapterName, notif.title)
                         }
                     )
                 }

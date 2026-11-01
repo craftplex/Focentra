@@ -1,6 +1,7 @@
 package com.niloy.focentra.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 
 import androidx.room.Index
@@ -24,6 +25,8 @@ data class StudySessionEntity(
     val sessionType: String, // "COUNTDOWN", "STOPWATCH", "POMODORO"
     val subject: String,
     val topic: String = "",
+    @ColumnInfo(defaultValue = "''")
+    val selectedChapter: String = "",
     val category: String = "Study",
     val goal: String = "",
     val notes: String = "",

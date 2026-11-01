@@ -20,6 +20,7 @@ import com.niloy.focentra.MainActivity
 import com.niloy.focentra.R
 import com.niloy.focentra.data.local.entity.NotificationEntity
 import com.niloy.focentra.data.local.entity.ReminderEntity
+import com.niloy.focentra.data.local.entity.ChapterEntity
 import com.niloy.focentra.viewmodel.NotificationType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,17 +34,23 @@ object StudyReminderNotifications {
     private const val TAG = "StudyReminders"
 
     const val ACTION_FIRE_REMINDER = "com.niloy.focentra.action.FIRE_REMINDER"
+    const val ACTION_SCHEDULED_ALERT = "com.niloy.focentra.action.SCHEDULED_ALERT"
+    const val ACTION_REVISION_ALARM = "com.niloy.focentra.action.REVISION_ALARM"
+    const val ACTION_RECAP_ALARM = "com.niloy.focentra.action.RECAP_ALARM"
     const val ACTION_DAILY_TARGET_7AM = "com.niloy.focentra.action.DAILY_TARGET_7AM"
     const val ACTION_DAILY_TARGET_730AM = "com.niloy.focentra.action.DAILY_TARGET_730AM"
     const val ACTION_MOTIVATION_7AM = "com.niloy.focentra.action.MOTIVATION_7AM"
     const val ACTION_MOTIVATION_630PM = "com.niloy.focentra.action.MOTIVATION_630PM"
     const val ACTION_MOTIVATION_1020PM = "com.niloy.focentra.action.MOTIVATION_1020PM"
-    const val ACTION_RECAP_ALARM = "com.niloy.focentra.action.RECAP_ALARM"
 
     const val EXTRA_REMINDER_ID = "reminder_id"
+    const val EXTRA_SCHEDULE_ID = "schedule_id"
+    const val EXTRA_CHAPTER_ID = "chapter_id"
     const val EXTRA_SUBJECT_NAME = "subject_name"
     const val EXTRA_CHAPTER_NAME = "chapter_name"
     const val EXTRA_RECAP_STAGE = "recap_stage"
+    const val EXTRA_DUE_AT = "due_at"
+    const val EXTRA_SKIP_AT = "skip_at"
 
     val MOTIVATIONAL_TITLES = listOf(
         "তুই পারবি",
@@ -166,47 +173,39 @@ object StudyReminderNotifications {
         context: Context,
         subjectName: String,
         chapterName: String,
-        recapTimestamp: Long
+        recapTimestamp: Long,
+        skippedAtTimestamp: Long
     ) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-
-        // 1 Hour Before Alarm
-        val oneHourBeforeMs = recapTimestamp - 3600000L
-        if (oneHourBeforeMs > System.currentTimeMillis()) {
-            val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+        val requestCode = "recap:$subjectName:$chapterName:$recapTimestamp".hashCode()
+        listOf("1h", "30m").forEach { oldStage ->
+            val oldIntent = Intent(context, StudyReminderReceiver::class.java).apply {
                 action = ACTION_RECAP_ALARM
-                data = Uri.parse("focentra://recap/1h/$recapTimestamp")
-                putExtra(EXTRA_SUBJECT_NAME, subjectName)
-                putExtra(EXTRA_CHAPTER_NAME, chapterName)
-                putExtra(EXTRA_RECAP_STAGE, "1h")
+                data = Uri.parse("focentra://recap/$oldStage/$recapTimestamp")
             }
-            val pi = PendingIntent.getBroadcast(
+            PendingIntent.getBroadcast(
                 context,
-                (recapTimestamp xor 0x1111).toInt(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, oneHourBeforeMs, pi)
+                (recapTimestamp xor if (oldStage == "1h") 0x1111 else 0x3333).toInt(),
+                oldIntent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )?.let { (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(it) }
         }
+        if (recapTimestamp <= System.currentTimeMillis()) return
 
-        // 30 Minutes Before Alarm
-        val thirtyMinsBeforeMs = recapTimestamp - 1800000L
-        if (thirtyMinsBeforeMs > System.currentTimeMillis()) {
-            val intent = Intent(context, StudyReminderReceiver::class.java).apply {
-                action = ACTION_RECAP_ALARM
-                data = Uri.parse("focentra://recap/30m/$recapTimestamp")
-                putExtra(EXTRA_SUBJECT_NAME, subjectName)
-                putExtra(EXTRA_CHAPTER_NAME, chapterName)
-                putExtra(EXTRA_RECAP_STAGE, "30m")
-            }
-            val pi = PendingIntent.getBroadcast(
-                context,
-                (recapTimestamp xor 0x3333).toInt(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, thirtyMinsBeforeMs, pi)
+        val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+            action = ACTION_RECAP_ALARM
+            data = Uri.parse("focentra://recap/$requestCode")
+            putExtra(EXTRA_SUBJECT_NAME, subjectName)
+            putExtra(EXTRA_CHAPTER_NAME, chapterName)
+            putExtra(EXTRA_DUE_AT, recapTimestamp)
+            putExtra(EXTRA_SKIP_AT, skippedAtTimestamp)
         }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        StudyReminderScheduler.scheduleOneTime(context, recapTimestamp, pendingIntent)
     }
 
     fun post(context: Context, notificationId: Int, title: String, message: String): Boolean {
@@ -271,11 +270,8 @@ object StudyReminderNotifications {
     internal fun isReminderAction(intent: Intent?): Boolean =
         intent?.action in setOf(
             ACTION_FIRE_REMINDER,
-            ACTION_DAILY_TARGET_7AM,
-            ACTION_DAILY_TARGET_730AM,
-            ACTION_MOTIVATION_7AM,
-            ACTION_MOTIVATION_630PM,
-            ACTION_MOTIVATION_1020PM,
+            ACTION_SCHEDULED_ALERT,
+            ACTION_REVISION_ALARM,
             ACTION_RECAP_ALARM
         )
 
@@ -284,69 +280,139 @@ object StudyReminderNotifications {
 }
 
 object StudyReminderScheduler {
-    fun scheduleAll(context: Context, reminders: List<ReminderEntity>) {
+    fun scheduleAll(
+        context: Context,
+        reminders: List<ReminderEntity>,
+        chapters: List<ChapterEntity> = emptyList()
+    ) {
         reminders.forEach { schedule(context, it) }
+        chapters.forEach { scheduleChapterRevisions(context, it) }
         scheduleDailyAlarms(context)
     }
 
     fun scheduleDailyAlarms(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        listOf(
+            StudyReminderNotifications.ACTION_DAILY_TARGET_7AM to 1001,
+            StudyReminderNotifications.ACTION_DAILY_TARGET_730AM to 1002,
+            StudyReminderNotifications.ACTION_MOTIVATION_7AM to 1003,
+            StudyReminderNotifications.ACTION_MOTIVATION_630PM to 1004,
+            StudyReminderNotifications.ACTION_MOTIVATION_1020PM to 1005
+        ).forEach { (action, requestCode) ->
+            val legacyIntent = Intent(context, StudyReminderReceiver::class.java).apply {
+                this.action = action
+                data = Uri.parse("focentra://recurring/$requestCode")
+            }
+            PendingIntent.getBroadcast(
+                context,
+                requestCode,
+                legacyIntent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )?.let(alarmManager::cancel)
+        }
 
-        // Daily Target 7:00 AM Every Day
-        scheduleRecurringAlarm(context, alarmManager, 7, 0, StudyReminderNotifications.ACTION_DAILY_TARGET_7AM, 1001)
-
-        // Daily Target 7:30 AM Every Day Except Monday
-        scheduleRecurringAlarm(context, alarmManager, 7, 30, StudyReminderNotifications.ACTION_DAILY_TARGET_730AM, 1002, excludeMonday = true)
-
-        // Motivational 7:00 AM
-        scheduleRecurringAlarm(context, alarmManager, 7, 0, StudyReminderNotifications.ACTION_MOTIVATION_7AM, 1003)
-
-        // Motivational 6:30 PM (18:30)
-        scheduleRecurringAlarm(context, alarmManager, 18, 30, StudyReminderNotifications.ACTION_MOTIVATION_630PM, 1004)
-
-        // Motivational 10:20 PM (22:20)
-        scheduleRecurringAlarm(context, alarmManager, 22, 20, StudyReminderNotifications.ACTION_MOTIVATION_1020PM, 1005)
+        val now = System.currentTimeMillis()
+        scheduledAlertTimes.forEach { slot ->
+            val triggerAt = nextScheduleTimeMillis(slot.hour, slot.minute, slot.days, now) ?: return@forEach
+            val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+                action = StudyReminderNotifications.ACTION_SCHEDULED_ALERT
+                data = Uri.parse("focentra://schedule/${slot.id}")
+                putExtra(StudyReminderNotifications.EXTRA_SCHEDULE_ID, slot.id)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                slot.id.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            setAlarm(context, alarmManager, triggerAt, pendingIntent)
+        }
     }
 
-    private fun scheduleRecurringAlarm(
+    fun scheduleChapterRevisions(context: Context, chapter: ChapterEntity) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val isComplete = chapter.tapCount >= 3 || chapter.status == "অধ্যায় Completely শেষ"
+        if (!isComplete) {
+            cancelChapterRevisions(context, chapter.id)
+            return
+        }
+
+        val completedAt = chapter.completedTimestamp.takeIf { it > 0L } ?: chapter.lastStudiedTimestamp
+        revisionStages.forEach { stage ->
+            val dueAt = revisionDueAt(completedAt, stage)
+            val intent = revisionIntent(context, chapter.id, stage.id, dueAt, chapter.subjectName, chapter.chapterName)
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                revisionRequestCode(chapter.id, stage.id),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (dueAt > System.currentTimeMillis()) {
+                setAlarm(context, alarmManager, dueAt, pendingIntent)
+            } else {
+                alarmManager.cancel(pendingIntent)
+            }
+        }
+    }
+
+    fun cancelChapterRevisions(context: Context, chapterId: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        revisionStages.forEach { stage ->
+            val intent = revisionIntent(context, chapterId, stage.id, 0L, "", "")
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                revisionRequestCode(chapterId, stage.id),
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            pendingIntent?.let(alarmManager::cancel)
+        }
+    }
+
+    internal fun revisionIntent(
+        context: Context,
+        chapterId: Long,
+        stage: String,
+        dueAt: Long,
+        subjectName: String,
+        chapterName: String
+    ): Intent = Intent(context, StudyReminderReceiver::class.java).apply {
+        action = StudyReminderNotifications.ACTION_REVISION_ALARM
+        data = Uri.parse("focentra://revision/$chapterId/$stage")
+        putExtra(StudyReminderNotifications.EXTRA_CHAPTER_ID, chapterId)
+        putExtra(StudyReminderNotifications.EXTRA_RECAP_STAGE, stage)
+        putExtra(StudyReminderNotifications.EXTRA_DUE_AT, dueAt)
+        putExtra(StudyReminderNotifications.EXTRA_SUBJECT_NAME, subjectName)
+        putExtra(StudyReminderNotifications.EXTRA_CHAPTER_NAME, chapterName)
+    }
+
+    internal fun revisionRequestCode(chapterId: Long, stage: String): Int =
+        "revision:$chapterId:$stage".hashCode()
+
+    internal fun revisionTitle(stage: String): String? =
+        revisionStages.firstOrNull { it.id == stage }?.title
+
+    private fun setAlarm(
         context: Context,
         alarmManager: AlarmManager,
-        hour: Int,
-        minute: Int,
-        action: String,
-        requestCode: Int,
-        excludeMonday: Boolean = false
+        triggerAtMillis: Long,
+        pendingIntent: PendingIntent
     ) {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-            if (timeInMillis <= now.timeInMillis) {
-                add(Calendar.DAY_OF_YEAR, 1)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
             }
-            if (excludeMonday && get(Calendar.DAY_OF_WEEK) == Calendar.MONDAY) {
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
+        } catch (exception: SecurityException) {
+            Log.w("StudyReminders", "Exact alarm access was revoked; using an inexact idle alarm.", exception)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
         }
+    }
 
-        val intent = Intent(context, StudyReminderReceiver::class.java).apply {
-            this.action = action
-            data = Uri.parse("focentra://recurring/$requestCode")
-        }
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        alarmManager.setAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            target.timeInMillis,
-            pendingIntent
-        )
+    fun scheduleOneTime(context: Context, triggerAtMillis: Long, pendingIntent: PendingIntent) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        setAlarm(context, alarmManager, triggerAtMillis, pendingIntent)
     }
 
     fun schedule(context: Context, reminder: ReminderEntity) {
@@ -358,11 +424,7 @@ object StudyReminderScheduler {
             return
         }
 
-        alarmManager.setAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtMillis,
-            pendingIntent
-        )
+        setAlarm(context, alarmManager, triggerAtMillis, pendingIntent)
     }
 
     fun cancel(context: Context, reminderId: Long) {
@@ -391,67 +453,171 @@ class StudyReminderReceiver : BroadcastReceiver() {
                 val action = validIntent.action ?: ""
 
                 when (action) {
-                    StudyReminderNotifications.ACTION_DAILY_TARGET_7AM,
-                    StudyReminderNotifications.ACTION_DAILY_TARGET_730AM -> {
-                        val title = "Daily Study Target"
-                        val message = "আজকের স্টাডি টার্গেট পূরণ করার জন্য প্রস্তুত হও! প্রতিদিনের ছোট ছোট পদক্ষেপই বড় সফলতা এনে দেবে।"
-                        val notifId = (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
-
-                        StudyReminderNotifications.post(context, notifId, title, message)
-                        app.repository.insertNotification(
-                            NotificationEntity(
-                                id = "dt_${System.currentTimeMillis()}",
-                                type = NotificationType.DAILY_TARGET.name,
-                                title = title,
-                                message = message,
-                                timestamp = System.currentTimeMillis()
-                            )
-                        )
+                    StudyReminderNotifications.ACTION_SCHEDULED_ALERT -> {
+                        val scheduleId = validIntent.getStringExtra(StudyReminderNotifications.EXTRA_SCHEDULE_ID) ?: return@launch
                         StudyReminderScheduler.scheduleDailyAlarms(context)
+                        val now = System.currentTimeMillis()
+                        val dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
+
+                        if (scheduleId != "evening_1830" || dayOfWeek in motivationalDays) {
+                            val slotDate = java.text.SimpleDateFormat("yyyy_MM_dd", Locale.US).format(Date(now))
+                            val index = Math.floorMod("$slotDate:$scheduleId".hashCode(), StudyReminderNotifications.MOTIVATIONAL_TITLES.size)
+                            val title = StudyReminderNotifications.MOTIVATIONAL_TITLES[index]
+                            val quote = StudyReminderNotifications.MOTIVATIONAL_QUOTES[
+                                Math.floorMod("$scheduleId:$slotDate".hashCode(), StudyReminderNotifications.MOTIVATIONAL_QUOTES.size)
+                            ]
+                            val id = "mot_${slotDate}_$scheduleId"
+                            StudyReminderNotifications.post(context, id.hashCode(), title, quote)
+                            app.repository.insertNotification(
+                                NotificationEntity(
+                                    id = id,
+                                    type = NotificationType.MOTIVATION.name,
+                                    title = title,
+                                    message = quote,
+                                    timestamp = now
+                                )
+                            )
+                        }
+
+                        if (scheduleId == "evening_1830" &&
+                            dayOfWeek in dailyTargetDays
+                        ) {
+                            val cal = Calendar.getInstance()
+                            cal.set(Calendar.HOUR_OF_DAY, 0)
+                            cal.set(Calendar.MINUTE, 0)
+                            cal.set(Calendar.SECOND, 0)
+                            cal.set(Calendar.MILLISECOND, 0)
+                            val startOfDay = cal.timeInMillis
+                            val sessions = app.database.sessionDao().getAllSessions()
+                            var focusedSeconds = sessions
+                                .filter { it.startTime in startOfDay..now }
+                                .sumOf { it.actualFocusedSeconds }
+                            val timerState = app.timerEngine.uiState.value
+                            val timerStart = timerState.sessionStartTime
+                            if (timerState.status == com.niloy.focentra.engine.TimerStatus.RUNNING ||
+                                timerState.status == com.niloy.focentra.engine.TimerStatus.PAUSED
+                            ) {
+                                if (timerStart in startOfDay..now) {
+                                    focusedSeconds += timerState.focusedSeconds
+                                }
+                            }
+                            val goalMinutes = app.database.goalDao().getAllGoals()
+                                .firstOrNull { it.periodType == "DAILY" && it.active }
+                                ?.targetMinutes ?: 480
+                            val focusedMinutes = (focusedSeconds / 60).toInt()
+                            val percent = (focusedSeconds * 100L / (goalMinutes.coerceAtLeast(1) * 60L))
+                                .toInt().coerceAtMost(100)
+                            val title = "Daily Study Target"
+                            val message = "আজ ${focusedMinutes} মিনিট পড়া হয়েছে—দৈনিক ${goalMinutes} মিনিটের লক্ষ্যের $percent% সম্পন্ন।"
+                            val id = "daily_target_${java.text.SimpleDateFormat("yyyy_MM_dd", Locale.US).format(Date(now))}"
+                            StudyReminderNotifications.post(context, id.hashCode(), title, message)
+                            app.repository.insertNotification(
+                                NotificationEntity(
+                                    id = id,
+                                    type = NotificationType.DAILY_TARGET.name,
+                                    title = title,
+                                    message = message,
+                                    timestamp = now
+                                )
+                            )
+                        }
                     }
 
-                    StudyReminderNotifications.ACTION_MOTIVATION_7AM,
-                    StudyReminderNotifications.ACTION_MOTIVATION_630PM,
-                    StudyReminderNotifications.ACTION_MOTIVATION_1020PM -> {
-                        val random = Random()
-                        val title = StudyReminderNotifications.MOTIVATIONAL_TITLES[random.nextInt(StudyReminderNotifications.MOTIVATIONAL_TITLES.size)]
-                        val quote = StudyReminderNotifications.MOTIVATIONAL_QUOTES[random.nextInt(StudyReminderNotifications.MOTIVATIONAL_QUOTES.size)]
-                        val notifId = (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
-
-                        StudyReminderNotifications.post(context, notifId, title, quote)
-                        app.repository.insertNotification(
-                            NotificationEntity(
-                                id = "mot_${System.currentTimeMillis()}",
-                                type = NotificationType.MOTIVATION.name,
-                                title = title,
-                                message = quote,
-                                timestamp = System.currentTimeMillis()
+                    StudyReminderNotifications.ACTION_REVISION_ALARM -> {
+                        val chapterId = validIntent.getLongExtra(StudyReminderNotifications.EXTRA_CHAPTER_ID, -1L)
+                        val chapter = app.database.chapterDao().getChapterById(chapterId)
+                        val stage = validIntent.getStringExtra(StudyReminderNotifications.EXTRA_RECAP_STAGE) ?: return@launch
+                        val dueAt = validIntent.getLongExtra(StudyReminderNotifications.EXTRA_DUE_AT, 0L)
+                        if (chapter != null &&
+                            (chapter.tapCount >= 3 || chapter.status == "অধ্যায় Completely শেষ") &&
+                            dueAt > 0L
+                        ) {
+                            val completedAt = chapter.completedTimestamp.takeIf { it > 0L }
+                                ?: chapter.lastStudiedTimestamp
+                            val historyJson = app.repository.getSetting("revision_history_json", "")
+                            val history = if (historyJson.isBlank()) org.json.JSONArray() else org.json.JSONArray(historyJson)
+                            val dueStage = revisionStages.firstOrNull { it.id == stage }
+                            val alreadyRevised = (0 until history.length()).any { index ->
+                                val record = history.getJSONObject(index)
+                                record.optString("subjectName").equals(chapter.subjectName, ignoreCase = true) &&
+                                    record.optString("chapterName").equals(chapter.chapterName, ignoreCase = true) &&
+                                    record.optLong("startTime", record.optLong("timestamp", 0L)) >= completedAt &&
+                                    record.optLong(
+                                        "durationSeconds",
+                                        record.optInt("durationMinutes", 0) * 60L
+                                    ) >= 60L * 60L &&
+                                    revisionStageId(record.optString("revisionStage")) == stage
+                            }
+                            if (alreadyRevised || dueStage == null ||
+                                revisionDueAt(completedAt, dueStage) != dueAt ||
+                                dueAt > System.currentTimeMillis()
+                            ) return@launch
+                            val title = StudyReminderScheduler.revisionTitle(stage) ?: "Revision Due"
+                            val message = "সময় হয়েছে «${chapter.chapterName}» (${chapter.subjectName}) অধ্যায়টি অন্তত ১ ঘণ্টা রিভিশন করার।"
+                            val id = "rev_${chapter.id}_$stage"
+                            StudyReminderNotifications.post(context, id.hashCode(), title, message)
+                            app.repository.insertNotification(
+                                NotificationEntity(
+                                    id = id,
+                                    type = NotificationType.REVISION_DUE.name,
+                                    title = title,
+                                    message = message,
+                                    subjectName = chapter.subjectName,
+                                    chapterName = chapter.chapterName,
+                                    timestamp = dueAt
+                                )
                             )
-                        )
-                        StudyReminderScheduler.scheduleDailyAlarms(context)
+                        }
                     }
 
                     StudyReminderNotifications.ACTION_RECAP_ALARM -> {
                         val subjectName = validIntent.getStringExtra(StudyReminderNotifications.EXTRA_SUBJECT_NAME) ?: "General"
                         val chapterName = validIntent.getStringExtra(StudyReminderNotifications.EXTRA_CHAPTER_NAME) ?: "Chapter"
-                        val stage = validIntent.getStringExtra(StudyReminderNotifications.EXTRA_RECAP_STAGE) ?: "1h"
-                        val timeText = if (stage == "1h") "১ ঘণ্টা" else "৩০ মিনিট"
-                        val title = "রিভিশন রিক্যাপ রিমাইন্ডার ($timeText বাকি)"
-                        val message = "«$chapterName» ($subjectName) এর রিভিশন রিক্যাপ করার সময় হয়েছে। আপনি পূর্বে এই রিভিশনে গ্যাপ দিয়েছিলেন।"
-                        val notifId = (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
+                        val title = "Revision Reminder"
+                        val message = "«$chapterName» ($subjectName) এর রিভিশন করার নির্ধারিত সময় হয়েছে।"
+                        val dueAt = validIntent.getLongExtra(
+                            StudyReminderNotifications.EXTRA_DUE_AT,
+                            System.currentTimeMillis()
+                        )
+                        val skippedAt = validIntent.getLongExtra(
+                            StudyReminderNotifications.EXTRA_SKIP_AT,
+                            dueAt
+                        )
+                        val historyJson = app.repository.getSetting("revision_history_json", "")
+                        val history = if (historyJson.isBlank()) org.json.JSONArray() else org.json.JSONArray(historyJson)
+                        val revisedSinceSkip = (0 until history.length()).any { index ->
+                            val record = history.getJSONObject(index)
+                            record.optString("subjectName").equals(subjectName, ignoreCase = true) &&
+                                record.optString("chapterName").equals(chapterName, ignoreCase = true) &&
+                                record.optLong("startTime", record.optLong("timestamp", 0L)) >= skippedAt &&
+                                record.optLong(
+                                    "durationSeconds",
+                                    record.optInt("durationMinutes", 0) * 60L
+                                ) >= 60L * 60L
+                        }
+                        if (revisedSinceSkip) return@launch
+                        val id = "rev_recap_${subjectName.hashCode()}_${chapterName.hashCode()}_${dueAt}"
 
-                        StudyReminderNotifications.post(context, notifId, title, message)
+                        StudyReminderNotifications.post(context, id.hashCode(), title, message)
                         app.repository.insertNotification(
                             NotificationEntity(
-                                id = "recap_alarm_${System.currentTimeMillis()}",
-                                type = NotificationType.RECAP_REMINDER.name,
+                                id = id,
+                                type = NotificationType.REVISION_DUE.name,
                                 title = title,
                                 message = message,
                                 subjectName = subjectName,
                                 chapterName = chapterName,
-                                timestamp = System.currentTimeMillis()
+                                timestamp = dueAt
                             )
                         )
+                    }
+
+                    StudyReminderNotifications.ACTION_DAILY_TARGET_7AM,
+                    StudyReminderNotifications.ACTION_DAILY_TARGET_730AM,
+                    StudyReminderNotifications.ACTION_MOTIVATION_7AM,
+                    StudyReminderNotifications.ACTION_MOTIVATION_630PM,
+                    StudyReminderNotifications.ACTION_MOTIVATION_1020PM -> {
+                        StudyReminderScheduler.scheduleDailyAlarms(context)
                     }
 
                     StudyReminderNotifications.ACTION_FIRE_REMINDER -> {
@@ -467,7 +633,7 @@ class StudyReminderReceiver : BroadcastReceiver() {
                                 )
                                 app.repository.insertNotification(
                                     NotificationEntity(
-                                        id = "rem_${reminder.id}_${System.currentTimeMillis()}",
+                                        id = "rem_${reminder.id}_${java.text.SimpleDateFormat("yyyy_MM_dd", Locale.US).format(Date())}",
                                         type = NotificationType.MOTIVATION.name,
                                         title = reminder.title,
                                         message = reminder.message,
@@ -494,7 +660,8 @@ class ReminderScheduleReceiver : BroadcastReceiver() {
                 Intent.ACTION_BOOT_COMPLETED,
                 Intent.ACTION_TIME_CHANGED,
                 Intent.ACTION_TIMEZONE_CHANGED,
-                Intent.ACTION_MY_PACKAGE_REPLACED
+                Intent.ACTION_MY_PACKAGE_REPLACED,
+                AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
             )
         ) return
 
@@ -503,7 +670,8 @@ class ReminderScheduleReceiver : BroadcastReceiver() {
             try {
                 val app = context.applicationContext as FocentraApp
                 val reminders = app.repository.allReminders.first()
-                StudyReminderScheduler.scheduleAll(context, reminders)
+                val chapters = app.repository.allChapters.first()
+                StudyReminderScheduler.scheduleAll(context, reminders, chapters)
             } catch (exception: Exception) {
                 Log.e("StudyReminders", "Failed to restore scheduled reminders.", exception)
             } finally {

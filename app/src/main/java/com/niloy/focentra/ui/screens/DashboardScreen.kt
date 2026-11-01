@@ -870,15 +870,14 @@ fun DashboardScreen(
             },
             onStart = { subj, chap, targetId ->
                 showFocusNowDialog = false
-                viewModel.timerEngine.configureSession(
+                viewModel.startTimerSession(
                     mode = SessionMode.STOPWATCH,
                     subject = subj,
-                    selectedChapter = chap,
+                    chapter = chap,
                     goal = focusNowTarget?.title ?: "",
-                    targetId = targetId
+                    targetId = targetId,
+                    destination = NavigationTab.TIMER
                 )
-                viewModel.timerEngine.startSession()
-                viewModel.navigateTo(NavigationTab.TIMER)
                 focusNowTarget = null
             }
         )
@@ -946,14 +945,13 @@ fun DashboardScreen(
             viewModel = viewModel,
             onDismiss = { pendingQuickTimerMode = null },
             onStart = { selectedSubj, selectedChap ->
-                viewModel.timerEngine.configureSession(
+                viewModel.startTimerSession(
                     mode = mode,
                     subject = selectedSubj,
-                    selectedChapter = selectedChap,
-                    durationMinutes = defaultMins
+                    chapter = selectedChap,
+                    durationMinutes = defaultMins,
+                    destination = NavigationTab.TIMER
                 )
-                viewModel.timerEngine.startSession()
-                viewModel.navigateTo(NavigationTab.TIMER)
                 pendingQuickTimerMode = null
             }
         )

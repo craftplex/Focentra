@@ -32,7 +32,7 @@ fun StudyBarChart(
     modifier: Modifier = Modifier,
     chartHeight: Int = 180
 ) {
-    if (items.isEmpty()) {
+    if (items.isEmpty() || items.none { it.studyMinutes > 0f }) {
         Box(
             modifier = modifier
                 .fillMaxWidth()

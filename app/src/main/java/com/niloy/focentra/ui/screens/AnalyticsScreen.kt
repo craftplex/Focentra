@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.niloy.focentra.engine.TimePeriod
+import com.niloy.focentra.engine.StatisticsEngine
 import com.niloy.focentra.ui.components.*
 import com.niloy.focentra.viewmodel.MainViewModel
 
@@ -566,20 +567,10 @@ fun ChapterStudyReportSection(
     val expandedSubjects = remember { mutableStateMapOf<Long, Boolean>() }
 
     val chapterStudyMap = remember(sessions, chapters) {
-        val map = mutableMapOf<Long, Long>()
-        sessions.forEach { s ->
-            val matchingCh = chapters.find { ch ->
-                ch.subjectName.equals(s.subject, ignoreCase = true) &&
-                    (s.topic.contains(ch.chapterName, ignoreCase = true) || ch.chapterName.contains(s.topic, ignoreCase = true) && s.topic.isNotBlank())
-            }
-            if (matchingCh != null) {
-                map[matchingCh.id] = (map[matchingCh.id] ?: 0L) + (s.actualFocusedSeconds / 60)
-            }
-        }
-        map
+        StatisticsEngine.buildChapterStudyTotalsSeconds(sessions, chapters)
     }
 
-    val maxChapterMins = (chapterStudyMap.values.maxOrNull() ?: 1L).coerceAtLeast(1L)
+    val maxChapterSeconds = (chapterStudyMap.values.maxOrNull() ?: 1L).coerceAtLeast(1L)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -694,10 +685,16 @@ fun ChapterStudyReportSection(
                                     } else {
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             subChapters.forEach { ch ->
-                                                val studiedMins = chapterStudyMap[ch.id] ?: 0L
-                                                val hours = studiedMins / 60
-                                                val mins = studiedMins % 60
-                                                val progressRatio = (studiedMins.toFloat() / maxChapterMins).coerceIn(0f, 1f)
+                                                val studiedSeconds = chapterStudyMap[ch.id] ?: 0L
+                                                val hours = studiedSeconds / 3600
+                                                val mins = (studiedSeconds % 3600) / 60
+                                                val progressRatio = (studiedSeconds.toFloat() / maxChapterSeconds).coerceIn(0f, 1f)
+                                                val studiedTimeText = when {
+                                                    hours > 0 -> "${hours}h ${mins}m"
+                                                    mins > 0 -> "${mins}m"
+                                                    studiedSeconds > 0 -> "${studiedSeconds}s"
+                                                    else -> "0m"
+                                                }
 
                                                 Surface(
                                                     shape = RoundedCornerShape(10.dp),
@@ -724,13 +721,13 @@ fun ChapterStudyReportSection(
 
                                                             Surface(
                                                                 shape = RoundedCornerShape(6.dp),
-                                                                color = if (studiedMins > 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                                                color = if (studiedSeconds > 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                                             ) {
                                                                 Text(
-                                                                    text = if (hours > 0) "${hours}h ${mins}m" else "${mins}m",
+                                                                    text = studiedTimeText,
                                                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                                    color = if (studiedMins > 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    color = if (studiedSeconds > 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                                                 )
                                                             }
                                                         }

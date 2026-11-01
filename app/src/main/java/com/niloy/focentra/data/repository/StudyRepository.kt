@@ -796,6 +796,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
             obj.put("sessionType", s.sessionType)
             obj.put("subject", s.subject)
             obj.put("topic", s.topic)
+            obj.put("selectedChapter", s.selectedChapter)
             obj.put("category", s.category)
             obj.put("goal", s.goal)
             obj.put("notes", s.notes)
@@ -931,6 +932,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                 jWriter.name("sessionType").value(s.sessionType)
                 jWriter.name("subject").value(s.subject)
                 jWriter.name("topic").value(s.topic)
+                jWriter.name("selectedChapter").value(s.selectedChapter)
                 jWriter.name("category").value(s.category)
                 jWriter.name("goal").value(s.goal)
                 jWriter.name("notes").value(s.notes)
@@ -1075,7 +1077,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                 listOf(
                     "ID", "Start Time", "End Time", "Total Duration (s)", "Focused Duration (s)",
                     "Paused Duration (s)", "Type", "Subject", "Topic", "Productivity",
-                    "Distractions", "Mood", "Energy", "Notes"
+                    "Distractions", "Mood", "Energy", "Notes", "Selected Chapter"
                 )
             )
         ).append('\n')
@@ -1096,7 +1098,8 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                         s.distractionCount.toString(),
                         s.mood,
                         s.energyLevel,
-                        s.notes
+                        s.notes,
+                        s.selectedChapter
                     )
                 )
             ).append('\n')
@@ -1183,6 +1186,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     sessionType = obj.optString("sessionType", "COUNTDOWN"),
                     subject = obj.optString("subject", "General"),
                     topic = obj.optString("topic", ""),
+                    selectedChapter = obj.optString("selectedChapter", ""),
                     category = obj.optString("category", "Study"),
                     goal = obj.optString("goal", ""),
                     notes = obj.optString("notes", ""),
@@ -1463,6 +1467,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     val md = parts.getOrNull(11) ?: "GOOD"
                     val energy = parts.getOrNull(12) ?: "HIGH"
                     val nts = parts.getOrNull(13) ?: ""
+                    val selectedChapter = parts.getOrNull(14) ?: ""
 
                     sessionList.add(
                         StudySessionEntity(
@@ -1474,6 +1479,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                             sessionType = sType,
                             subject = subj,
                             topic = top,
+                            selectedChapter = selectedChapter,
                             category = "Study",
                             goal = "",
                             notes = nts,

@@ -22,6 +22,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 enum class SessionMode {
     COUNTDOWN,
@@ -113,6 +116,8 @@ class TimerEngine private constructor(
 
     private val _uiState = MutableStateFlow(TimerUiState())
     val uiState: StateFlow<TimerUiState> = _uiState.asStateFlow()
+    private val _savedRevisionSessions = MutableSharedFlow<StudySessionEntity>(extraBufferCapacity = 8)
+    val savedRevisionSessions: SharedFlow<StudySessionEntity> = _savedRevisionSessions.asSharedFlow()
 
     private var sessionStartMs: Long = 0L
     private var runningSegmentStartMs: Long = 0L
@@ -316,6 +321,7 @@ class TimerEngine private constructor(
             sessionType = currentState.mode.name,
             subject = currentState.subject,
             topic = currentState.topic,
+            selectedChapter = currentState.selectedChapter,
             goal = currentState.goal,
             targetId = currentState.targetId,
             tags = currentState.tags.joinToString(","),
@@ -376,6 +382,7 @@ class TimerEngine private constructor(
             sessionType = currentState.mode.name,
             subject = currentState.subject,
             topic = currentState.topic,
+            selectedChapter = currentState.selectedChapter,
             goal = currentState.goal,
             targetId = currentState.targetId,
             tags = currentState.tags.joinToString(","),
@@ -384,13 +391,8 @@ class TimerEngine private constructor(
             completionStatus = if (isEarly) "EARLY_FINISH" else "COMPLETED"
         )
 
-        runBlocking(Dispatchers.IO) {
-            if (sessionEntity.topic.contains("Revision", ignoreCase = true) || sessionEntity.sessionType.equals("REVISION", ignoreCase = true)) {
-                saveRevisionRecordDirectly(sessionEntity, currentState.selectedChapter)
-            } else {
-                repository.insertSession(sessionEntity)
-            }
-        }
+        runBlocking(Dispatchers.IO) { repository.insertSession(sessionEntity) }
+        if (isRevisionSession(sessionEntity)) _savedRevisionSessions.tryEmit(sessionEntity)
 
         _uiState.value = currentState.copy(
             status = TimerStatus.IDLE,
@@ -405,44 +407,6 @@ class TimerEngine private constructor(
         playCompletionSignals()
     }
 
-    private fun saveRevisionRecordDirectly(session: StudySessionEntity, chapterName: String) {
-        try {
-            val revisionHistoryJson = runBlocking(Dispatchers.IO) {
-                repository.getSetting("revision_history_json", "")
-            }
-
-            val arr = if (revisionHistoryJson.isNotBlank()) {
-                org.json.JSONArray(revisionHistoryJson)
-            } else {
-                org.json.JSONArray()
-            }
-
-            val durMins = (session.actualFocusedSeconds / 60).toInt().coerceAtLeast(1)
-            val obj = org.json.JSONObject().apply {
-                put("id", java.util.UUID.randomUUID().toString())
-                put("subjectName", session.subject.ifBlank { "General" })
-                put("chapterName", if (chapterName.isNotBlank()) chapterName else "General Chapter")
-                put("durationMinutes", durMins)
-                put("startTime", session.startTime)
-                put("endTime", session.endTime)
-                put("timestamp", session.endTime)
-                put("revisionStage", if (session.topic.isNotBlank()) session.topic else "Revision")
-            }
-
-            val updated = org.json.JSONArray()
-            updated.put(obj)
-            for (i in 0 until arr.length()) {
-                updated.put(arr.get(i))
-            }
-
-            runBlocking(Dispatchers.IO) {
-                repository.setSetting("revision_history_json", updated.toString())
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
     fun saveCompletedSessionWithFeedback(
         productivityRating: Int,
         mood: String,
@@ -452,15 +416,6 @@ class TimerEngine private constructor(
         targetId: String = ""
     ) {
         val completed = _uiState.value.completedSessionData ?: return
-
-        if (completed.topic.contains("Revision", ignoreCase = true) || completed.sessionType.equals("REVISION", ignoreCase = true)) {
-            _uiState.value = _uiState.value.copy(
-                showCompletionSheet = false,
-                status = TimerStatus.IDLE,
-                completedSessionData = null
-            )
-            return
-        }
 
         scope.launch {
             val updated = completed.copy(
@@ -473,6 +428,7 @@ class TimerEngine private constructor(
                 updatedTimestamp = System.currentTimeMillis()
             )
             repository.insertSession(updated)
+            if (isRevisionSession(updated)) _savedRevisionSessions.emit(updated)
             _uiState.value = _uiState.value.copy(
                 showCompletionSheet = false,
                 status = TimerStatus.IDLE,
@@ -480,6 +436,10 @@ class TimerEngine private constructor(
             )
         }
     }
+
+    private fun isRevisionSession(session: StudySessionEntity): Boolean =
+        session.topic.contains("revision", ignoreCase = true) ||
+            session.sessionType.equals("REVISION", ignoreCase = true)
 
     fun dismissCompletionSheet() {
         val completed = _uiState.value.completedSessionData ?: run {

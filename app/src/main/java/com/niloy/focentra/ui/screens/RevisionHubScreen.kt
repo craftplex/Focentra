@@ -91,6 +91,7 @@ import com.niloy.focentra.engine.TimerStatus
 import com.niloy.focentra.ui.components.TimerProgressRing
 import com.niloy.focentra.ui.components.parseColorHex
 import com.niloy.focentra.viewmodel.MainViewModel
+import com.niloy.focentra.viewmodel.NavigationTab
 import com.niloy.focentra.viewmodel.NotificationType
 import com.niloy.focentra.viewmodel.RevisionRecord
 import com.niloy.focentra.service.revisionStages

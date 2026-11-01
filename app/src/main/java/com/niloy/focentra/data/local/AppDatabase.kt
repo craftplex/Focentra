@@ -140,6 +140,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         suspend fun populateInitialData(database: AppDatabase) {
             val settingDao = database.settingDao()
+            val achievementDao = database.achievementDao()
 
             // Achievements
             val achievements = listOf(

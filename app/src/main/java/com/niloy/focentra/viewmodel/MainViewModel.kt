@@ -366,6 +366,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         list.filter { it.startTime in startOfToday..now }.sumOf { it.actualFocusedSeconds } / 60
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0L)
 
+    // Revision History Log Feature
+    private val _revisionHistory = MutableStateFlow<List<RevisionRecord>>(emptyList())
+    val revisionHistory: StateFlow<List<RevisionRecord>> = _revisionHistory.asStateFlow()
+
     // Derived states optimized on Dispatchers.Default background threads
     val activeNotifications = combine(chapters, _revisionHistory) { chapterList, history ->
         kotlinx.coroutines.withContext(Dispatchers.Default) {
@@ -450,10 +454,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Exam / Target Countdown Planner Feature
     private val _examTargets = MutableStateFlow<List<ExamTarget>>(emptyList())
     val examTargets: StateFlow<List<ExamTarget>> = _examTargets.asStateFlow()
-
-    // Revision History Log Feature
-    private val _revisionHistory = MutableStateFlow<List<RevisionRecord>>(emptyList())
-    val revisionHistory: StateFlow<List<RevisionRecord>> = _revisionHistory.asStateFlow()
 
     fun recordRevisionSkip(
         subjectName: String,

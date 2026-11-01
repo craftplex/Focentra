@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.3] - 2026-11-01
+
+- **Background Notifications**: Schedule motivational and daily-target alerts at the requested times, restore alarms after reboot/time changes, and use exact alarms when Android grants access.
+- **Mandatory Revision Flow**: Add due-stage notifications and history, enforce one-hour revisions, support up to five reasoned dismissals with a four-day reschedule window, and require ten hours of chapter study after the fifth dismissal.
+- **Timer and Revision Hub**: Gate study timers while revisions are due, keep scheduled cards until a full-hour revision is saved, and correct the due-date countdown.
+- **Analytics**: Persist selected chapters with study sessions, report chapter-level study time accurately, and show an explicit no-activity state in empty charts.
+- **Version Bump**: Updated `versionCode` to `67` and `versionName` to `8.0.3`.
+
 ## [8.0.0] - 2026-10-22
 
 - **Major Production Release (v8.0.0)**: Production-ready stable release optimized for peak performance, zero lag, zero crashes, and 100% bug-free operation across all screens and background services.

@@ -1,6 +1,7 @@
 package com.niloy.focentra
 
 import com.niloy.focentra.data.local.entity.StudySessionEntity
+import com.niloy.focentra.data.local.entity.ChapterEntity
 import com.niloy.focentra.engine.StatisticsEngine
 import com.niloy.focentra.engine.TimePeriod
 import com.niloy.focentra.data.repository.calculateStreak
@@ -80,6 +81,48 @@ class StatisticsEngineTest {
         } finally {
             TimeZone.setDefault(originalTimeZone)
         }
+    }
+
+    @Test
+    fun chapterStudyTotalsUseSelectedChapterAndKeepSubMinuteSessions() {
+        val chapters = listOf(
+            ChapterEntity(id = 1, subjectId = 1, subjectName = "Physics", chapterName = "Vectors"),
+            ChapterEntity(id = 2, subjectId = 1, subjectName = "Physics", chapterName = "Motion")
+        )
+        val sessions = listOf(
+            session(1_000L, 30L).copy(subject = "Physics", topic = "not the chapter", selectedChapter = "Vectors"),
+            session(2_000L, 45L).copy(subject = "Physics", topic = "Vectors - practice"),
+            session(3_000L, 60L).copy(subject = "Physics", topic = "Vectors", selectedChapter = "Motion")
+        )
+
+        assertEquals(
+            mapOf(1L to 75L, 2L to 60L),
+            StatisticsEngine.buildChapterStudyTotalsSeconds(sessions, chapters)
+        )
+    }
+
+    @Test
+    fun lastWeekTrendBucketsStudyIntoTheCorrectWeekday() {
+        val thisMonday = Calendar.getInstance().apply {
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val lastTuesday = (thisMonday.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, -6)
+            set(Calendar.HOUR_OF_DAY, 12)
+        }
+        val stats = StatisticsEngine.calculatePeriodStats(
+            listOf(session(lastTuesday.timeInMillis, 90 * 60L)),
+            TimePeriod.LAST_WEEK
+        )
+
+        assertEquals(7, stats.chartData.size)
+        assertEquals(90f, stats.chartData[1].studyMinutes, 0.01f)
+        assertEquals(0f, stats.chartData[6].studyMinutes, 0.01f)
     }
 
     private fun session(startTime: Long, focusedSeconds: Long) = StudySessionEntity(

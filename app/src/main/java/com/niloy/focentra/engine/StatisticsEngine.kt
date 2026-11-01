@@ -1,6 +1,7 @@
 package com.niloy.focentra.engine
 
 import com.niloy.focentra.data.local.entity.StudySessionEntity
+import com.niloy.focentra.data.local.entity.ChapterEntity
 import com.niloy.focentra.data.repository.calculateStreak
 import java.text.SimpleDateFormat
 import java.util.*
@@ -94,6 +95,30 @@ data class PeriodStatistics(
 )
 
 object StatisticsEngine {
+    fun buildChapterStudyTotalsSeconds(
+        sessions: List<StudySessionEntity>,
+        chapters: List<ChapterEntity>
+    ): Map<Long, Long> {
+        val totals = mutableMapOf<Long, Long>()
+        sessions.forEach { session ->
+            val selectedChapter = session.selectedChapter.trim()
+            val chapter = chapters.firstOrNull {
+                it.subjectName.equals(session.subject, ignoreCase = true) &&
+                    selectedChapter.isNotBlank() &&
+                    it.chapterName.equals(selectedChapter, ignoreCase = true)
+            } ?: chapters.firstOrNull {
+                it.subjectName.equals(session.subject, ignoreCase = true) &&
+                    session.topic.isNotBlank() &&
+                    (session.topic.contains(it.chapterName, ignoreCase = true) ||
+                        it.chapterName.contains(session.topic, ignoreCase = true))
+            }
+            if (chapter != null) {
+                totals[chapter.id] = (totals[chapter.id] ?: 0L) + session.actualFocusedSeconds.coerceAtLeast(0L)
+            }
+        }
+        return totals
+    }
+
 
     fun calculatePeriodStats(
         sessions: List<StudySessionEntity>,
@@ -350,7 +375,7 @@ object StatisticsEngine {
         }
     }
 
-    private fun buildChartItems(
+    internal fun buildChartItems(
         sessions: List<StudySessionEntity>,
         period: TimePeriod,
         goalMinutes: Float

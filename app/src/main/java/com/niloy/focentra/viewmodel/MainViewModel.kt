@@ -11,8 +11,10 @@ import com.niloy.focentra.data.repository.calculateStreak
 import com.niloy.focentra.engine.*
 import com.niloy.focentra.service.StudyReminderNotifications
 import com.niloy.focentra.service.StudyReminderScheduler
+import com.niloy.focentra.service.revisionDueAt
+import com.niloy.focentra.service.revisionStages
+import com.niloy.focentra.service.revisionStageId
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -81,7 +83,8 @@ data class RevisionRecord(
     val startTime: Long = System.currentTimeMillis(),
     val endTime: Long = System.currentTimeMillis(),
     val timestamp: Long = System.currentTimeMillis(),
-    val revisionStage: String = "Revision"
+    val revisionStage: String = "Revision",
+    val durationSeconds: Long = durationMinutes * 60L
 )
 
 data class DashboardWidgetOrder(
@@ -136,11 +139,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _notificationStateLoaded = MutableStateFlow(false)
     val notificationStateLoaded: StateFlow<Boolean> = _notificationStateLoaded.asStateFlow()
     private val notificationPersistenceMutex = Mutex()
-    private val pendingSystemNotificationIds = mutableSetOf<String>()
-    private val systemNotificationEvents = Channel<AppNotification>(Channel.UNLIMITED)
-
-    val systemNotificationEvent: Flow<AppNotification> = systemNotificationEvents.receiveAsFlow()
-
     fun markNotificationsAsSeen(notificationIds: Set<String>) {
         if (notificationIds.isEmpty()) return
         val updated = _seenNotificationIds.value + notificationIds
@@ -155,29 +153,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun acknowledgeSystemNotification(id: String, wasPosted: Boolean) {
-        pendingSystemNotificationIds.remove(id)
-        if (!wasPosted) return
-
-        val updated = _postedNotificationIds.value + id
-        _postedNotificationIds.value = updated
-        persistNotificationIds("posted_notification_ids", updated)
+        if (wasPosted) {
+            val updated = _postedNotificationIds.value + id
+            _postedNotificationIds.value = updated
+            persistNotificationIds("posted_notification_ids", updated)
+        }
     }
 
     fun retrySystemNotifications() {
-        if (!_notificationStateLoaded.value) return
-        activeNotifications.value.forEach(::enqueueSystemNotification)
-    }
-
-    private fun enqueueSystemNotification(notification: AppNotification) {
-        if (notification.id in _postedNotificationIds.value ||
-            !pendingSystemNotificationIds.add(notification.id)
-        ) return
-
-        val result = systemNotificationEvents.trySend(notification)
-        if (result.isFailure) {
-            pendingSystemNotificationIds.remove(notification.id)
-            Log.e("FocentraNotifications", "Failed to queue system notification ${notification.id}.", result.exceptionOrNull())
-        }
+        StudyReminderScheduler.scheduleAll(getApplication(), reminders.value, chapters.value)
     }
 
     private fun persistNotificationIds(key: String, ids: Set<String>) {
@@ -252,7 +236,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val dailyTasks = repository.allTasks.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val chapters = repository.allChapters.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val dbNotifications = repository.allNotifications.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-    val dbRevisionSkips = repository.allRevisionSkips.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val dbRevisionSkips = repository.allRevisionSkips.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun addChapter(subjectId: Long, subjectName: String, chapterName: String) {
         if (chapterName.isBlank()) return
@@ -281,7 +265,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val compTime = if (newTapCount == 3) now else 0L
         viewModelScope.launch {
-            repository.updateChapter(chapter.copy(tapCount = newTapCount, status = newStatus, lastStudiedTimestamp = now, completedTimestamp = compTime))
+            val updated = chapter.copy(tapCount = newTapCount, status = newStatus, lastStudiedTimestamp = now, completedTimestamp = compTime)
+            repository.updateChapter(updated)
+            StudyReminderScheduler.scheduleChapterRevisions(getApplication(), updated)
         }
     }
 
@@ -301,7 +287,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             0L
         }
         viewModelScope.launch {
-            repository.updateChapter(chapter.copy(status = newStatus, tapCount = newTapCount, lastStudiedTimestamp = now, completedTimestamp = compTime))
+            val updated = chapter.copy(status = newStatus, tapCount = newTapCount, lastStudiedTimestamp = now, completedTimestamp = compTime)
+            repository.updateChapter(updated)
+            StudyReminderScheduler.scheduleChapterRevisions(getApplication(), updated)
         }
     }
 
@@ -378,228 +366,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         list.filter { it.startTime in startOfToday..now }.sumOf { it.actualFocusedSeconds } / 60
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0L)
 
-    private val notificationProgress = combine(todayFocusedMinutes, notificationClock) { minutes, now ->
-        minutes to now
-    }
-
     // Derived states optimized on Dispatchers.Default background threads
-    val activeNotifications = combine(chapters, sessions, goals, notificationProgress, _dismissedNotificationIds) { chapterList, sessionList, goalList, todayProgress, dismissed ->
+    val activeNotifications = combine(chapters, _revisionHistory) { chapterList, history ->
         kotlinx.coroutines.withContext(Dispatchers.Default) {
             val list = mutableListOf<AppNotification>()
-            val (todayMins, now) = todayProgress
-            val ONE_DAY_MS = 24 * 60 * 60 * 1000L
-            val THREE_DAYS_MS = 3 * ONE_DAY_MS
-            val FIVE_DAYS_MS = 5 * ONE_DAY_MS
-            val SEVEN_DAYS_MS = 7 * ONE_DAY_MS
-            val FIFTEEN_DAYS_MS = 15 * ONE_DAY_MS
-
-            val todayDateStr = SimpleDateFormat("yyyy_MM_dd", Locale.getDefault()).format(Date(now))
-
-            val THIRTY_DAYS_MS = 30 * ONE_DAY_MS
-
-            // 3. Ebbinghaus Forgetting Curve Alerts (1d, 3d, 7d, 15d, 30d)
+            val now = System.currentTimeMillis()
             chapterList.forEach { ch ->
                 val isCompleted = ch.tapCount >= 3 || ch.status == "অধ্যায় Completely শেষ"
-                if (isCompleted) {
-                    val compTime = if (ch.completedTimestamp > 0) ch.completedTimestamp else ch.lastStudiedTimestamp
-                    val elapsed = now - compTime
-                    val (title, msg, stage) = when {
-                        elapsed >= THIRTY_DAYS_MS -> Triple(
-                            "30th Day Master Review Cycle",
-                            "It's time for the 30th day master review cycle for «${ch.chapterName}» in ${ch.subjectName}. Solidify your memory for long term!",
-                            "30d"
-                        )
-                        elapsed >= FIFTEEN_DAYS_MS -> Triple(
-                            "15th Day Final Revision Test",
-                            "It's time for the 15th day revision test for «${ch.chapterName}» in ${ch.subjectName}. Complete a 30-minute revision session!",
-                            "15d"
-                        )
-                        elapsed >= SEVEN_DAYS_MS -> Triple(
-                            "7th Day Problem Solving Revision",
-                            "«${ch.chapterName}» in ${ch.subjectName} was studied 7 days ago. Start a 30-minute revision session to reinforce memory!",
-                            "7d"
-                        )
-                        elapsed >= THREE_DAYS_MS -> Triple(
-                            "3rd Day Scientific Revision",
-                            "The 3-day scientific revision cycle for «${ch.chapterName}» in ${ch.subjectName} has begun. Refresh your memory with a 30-minute session!",
-                            "3d"
-                        )
-                        elapsed >= ONE_DAY_MS -> Triple(
-                            "1st Day Quick Recap Revision",
-                            "You recently completed «${ch.chapterName}» in ${ch.subjectName}. Do a quick recap revision now to retain key concepts!",
-                            "1d"
-                        )
-                        else -> Triple("", "", "")
-                    }
+                if (!isCompleted) return@forEach
+                val completedAt = ch.completedTimestamp.takeIf { it > 0L } ?: ch.lastStudiedTimestamp
+                if (completedAt <= 0L) return@forEach
 
-                    if (title.isNotEmpty()) {
-                        val notifId = "rev_${ch.id}_${compTime}_${stage}"
+                revisionStages.forEach { stage ->
+                    val dueAt = revisionDueAt(completedAt, stage)
+                    val alreadyCompleted = history.any {
+                        it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
+                            it.chapterName.equals(ch.chapterName, ignoreCase = true) &&
+                            it.startTime >= completedAt &&
+                            it.durationSeconds >= 60L * 60L &&
+                            revisionStageId(it.revisionStage) == stage.id
+                    }
+                    if (dueAt <= now && !alreadyCompleted) {
+                        val notifId = "rev_${ch.id}_${stage.id}"
                         list.add(
                             AppNotification(
                                 id = notifId,
                                 type = NotificationType.REVISION_DUE,
-                                title = title,
-                                message = msg,
+                                title = stage.title,
+                                message = "সময় হয়েছে «${ch.chapterName}» (${ch.subjectName}) অধ্যায়টি অন্তত ১ ঘণ্টা রিভিশন করার।",
                                 subjectName = ch.subjectName,
                                 chapterName = ch.chapterName,
-                                timestamp = compTime
-                            )
-                        )
-                    }
-                } else if (ch.status != "পড়া শুরু হয় নাই" && ch.status.isNotBlank()) {
-                    val lastStudy = ch.lastStudiedTimestamp
-                    if (lastStudy > 0 && (now - lastStudy >= FIVE_DAYS_MS)) {
-                        val notifId = "inact_${ch.id}_${todayDateStr}"
-                        list.add(
-                            AppNotification(
-                                id = notifId,
-                                type = NotificationType.INACTIVITY_WARNING,
-                                title = "Completion Reminder",
-                                message = "«${ch.chapterName}» in ${ch.subjectName} hasn't been studied for 5 days. Start a focus session to finish it today!",
-                                subjectName = ch.subjectName,
-                                chapterName = ch.chapterName,
-                                timestamp = lastStudy
+                                timestamp = dueAt
                             )
                         )
                     }
                 }
-            }
-
-            val todayStartMs = Calendar.getInstance().apply {
-                timeInMillis = now
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-
-            // 8. Dynamic Progress Bar in Daily Target Tracker
-            val dailyGoal = goalList.find { it.periodType == "DAILY" }?.targetMinutes ?: 480
-            val remainingMins = (dailyGoal - todayMins).coerceAtLeast(0L)
-
-            val totalGoalMins = dailyGoal.toFloat().coerceAtLeast(1f)
-            val completedRatio = (todayMins / totalGoalMins).coerceIn(0f, 1f)
-            val filledBlocks = (completedRatio * 10).toInt()
-            val emptyBlocks = 10 - filledBlocks
-            val progressBarText = "[${"▓".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}]"
-            val percentInt = (completedRatio * 100).toInt()
-
-            val todayHrsText = String.format(Locale.US, "%.1f", todayMins / 60f)
-            val goalHrsText = String.format(Locale.US, "%.1f", dailyGoal / 60f)
-
-            val remainingHours = remainingMins / 60
-            val remainingMinutes = remainingMins % 60
-            val remainingTimeText = if (remainingMinutes == 0L) {
-                "${remainingHours}h remaining"
-            } else if (remainingHours == 0L) {
-                "${remainingMinutes}m remaining"
-            } else {
-                "${remainingHours}h ${remainingMinutes}m remaining"
-            }
-
-            val goalMessage = "Daily Goal: ${todayHrsText} / ${goalHrsText}h $progressBarText $percentInt% completed! ($remainingTimeText)"
-            val goalNotifId = "goal_warning_${todayDateStr}"
-            list.add(
-                AppNotification(
-                    id = goalNotifId,
-                    type = NotificationType.GOAL_WARNING,
-                    title = "Daily Target Tracker",
-                    message = goalMessage,
-                    timestamp = todayStartMs + (7 * 3600 * 1000L)
-                )
-            )
-
-            // 2. Adaptive AI / Peak Focus Hour Reminder
-            val calNow = Calendar.getInstance().apply { timeInMillis = now }
-            val currentHour = calNow.get(Calendar.HOUR_OF_DAY)
-            val currentDayOfWeek = calNow.get(Calendar.DAY_OF_WEEK) // 1 = Sunday
-
-            if (currentHour in 21..23 || currentHour in 6..8) {
-                val notifId = "peak_hour_${todayDateStr}_${currentHour}"
-                list.add(
-                    AppNotification(
-                        id = notifId,
-                        type = NotificationType.DAILY_TARGET,
-                        title = "Peak Focus Hour Started!",
-                        message = "Your peak productivity window is starting now. Launch a focus session to make the most of it!",
-                        timestamp = todayStartMs + (currentHour * 3600 * 1000L)
-                    )
-                )
-            }
-
-            // 4. Streak Saver / Evening Intervention (after 7 PM if 0 mins studied today)
-            if (currentHour >= 19 && todayMins == 0L) {
-                val currentStreakVal = calculateStreak(sessionList).currentStreak
-                val notifId = "streak_saver_${todayDateStr}"
-                list.add(
-                    AppNotification(
-                        id = notifId,
-                        type = NotificationType.INACTIVITY_WARNING,
-                        title = "Study Streak at Risk!",
-                        message = "Your ${currentStreakVal}-day study streak is in danger! Complete at least a 10-minute focus session now to save your streak.",
-                        timestamp = todayStartMs + (19 * 3600 * 1000L)
-                    )
-                )
-            }
-
-            // 6. Brain Dump & Daily Reflection Prompt (after 10 PM)
-            if (currentHour >= 22) {
-                val notifId = "brain_dump_prompt_${todayDateStr}"
-                list.add(
-                    AppNotification(
-                        id = notifId,
-                        type = NotificationType.DAILY_TARGET,
-                        title = "Night Reflection & Brain Dump",
-                        message = "Clear your mind before sleep! Unload remaining thoughts or study notes into Brain Dump for a fresh start tomorrow.",
-                        timestamp = todayStartMs + (22 * 3600 * 1000L)
-                    )
-                )
-            }
-
-            // 7. Weekly Digest & Productivity Benchmark (Sunday mornings)
-            if (currentDayOfWeek == Calendar.SUNDAY && currentHour in 6..11) {
-                val weekStart = now - SEVEN_DAYS_MS
-                val totalWeeklyMins = sessionList
-                    .filter { it.startTime in weekStart..now }
-                    .sumOf { it.actualFocusedSeconds } / 60
-                val weeklyHrs = String.format(Locale.US, "%.1f", totalWeeklyMins / 60f)
-                val notifId = "weekly_digest_${todayDateStr}"
-                list.add(
-                    AppNotification(
-                        id = notifId,
-                        type = NotificationType.DAILY_TARGET,
-                        title = "Weekly Focus Digest",
-                        message = "Great effort this week! You completed $weeklyHrs hours of focused study across the past 7 days.",
-                        timestamp = todayStartMs + (8 * 3600 * 1000L)
-                    )
-                )
-            }
-
-            // 10. Ambient Vibe Quick Launch Notification
-            val ambientNotifId = "ambient_vibe_${todayDateStr}"
-            list.add(
-                AppNotification(
-                    id = ambientNotifId,
-                    type = NotificationType.DAILY_TARGET,
-                    title = "Ambient Focus Environment",
-                    message = "Set the perfect study mood! Launch a focus session with deep focus background soundscapes.",
-                    timestamp = todayStartMs + (9 * 3600 * 1000L)
-                )
-            )
-
-            // Achievement notifications
-            val totalHours = sessionList.sumOf { it.actualFocusedSeconds } / 3600f
-            if (totalHours >= 10f) {
-                val notifId = "ach_10h_${todayDateStr}"
-                list.add(
-                    AppNotification(
-                        id = notifId,
-                        type = NotificationType.MOTIVATION,
-                        title = "Milestone Achieved!",
-                        message = "You have completed over 10 hours of focused study! Keep up the momentum.",
-                        timestamp = now
-                    )
-                )
             }
 
             list.toList()
@@ -662,12 +463,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Boolean, String) -> Unit
     ) {
         viewModelScope.launch {
-            val currentSkips = dbRevisionSkips.value.count {
-                it.subjectName.equals(subjectName, ignoreCase = true) &&
-                it.chapterName.equals(chapterName, ignoreCase = true)
-            }
+            val now = System.currentTimeMillis()
+            val currentSkips = app.database.revisionSkipDao()
+                .getSkipCountForChapter(subjectName, chapterName)
             if (currentSkips >= 5) {
-                onResult(false, "Maximum 5 skips allowed for this chapter! You must complete 15 hours of revision for «$chapterName» before starting other subjects.")
+                onResult(false, "Maximum 5 dismissals reached for «$chapterName». Complete 10 hours of study for this chapter before starting other subjects.")
+                return@launch
+            }
+            if (scheduledRecapTimestamp <= now || scheduledRecapTimestamp > now + 4L * 24L * 60L * 60L * 1000L) {
+                onResult(false, "Choose a reminder time within the next 4 days.")
+                return@launch
+            }
+            if (reason.isBlank()) {
+                onResult(false, "Please enter the reason for dismissing this revision.")
                 return@launch
             }
 
@@ -676,7 +484,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 subjectName = subjectName,
                 chapterName = chapterName,
                 reason = reason.trim(),
-                skippedAtTimestamp = System.currentTimeMillis(),
+                skippedAtTimestamp = now,
                 scheduledRecapTimestamp = scheduledRecapTimestamp
             )
             repository.insertRevisionSkip(skipEntity)
@@ -685,7 +493,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 getApplication(),
                 subjectName,
                 chapterName,
-                scheduledRecapTimestamp
+                scheduledRecapTimestamp,
+                now
             )
 
             val recapNotif = NotificationEntity(
@@ -705,44 +514,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun isTimerBlockedFor(targetSubject: String, targetChapter: String): Pair<Boolean, String> {
-        val pendingRevisions = activeNotifications.value.filter { it.type == NotificationType.REVISION_DUE }
-        val skips = dbRevisionSkips.value
-        val now = System.currentTimeMillis()
-
-        for (item in pendingRevisions) {
-            val matchingSkips = skips.filter {
-                it.subjectName.equals(item.subjectName, ignoreCase = true) &&
-                it.chapterName.equals(item.chapterName, ignoreCase = true)
-            }
-            val skipCount = matchingSkips.size
-
-            // If there's an active scheduled recap in the future and skip count < 5, skipping is active!
-            val hasActiveSkip = skipCount < 5 && matchingSkips.any { it.scheduledRecapTimestamp > now }
-            if (hasActiveSkip) {
-                continue // Unblocked because user explicitly skipped it and recap time has not arrived
-            }
-
-            val requiredMins = if (skipCount >= 5) 900 else 60
-            val completedMins = revisionHistory.value.filter {
-                it.subjectName.equals(item.subjectName, ignoreCase = true) &&
-                it.chapterName.equals(item.chapterName, ignoreCase = true) &&
-                it.timestamp >= item.timestamp
-            }.sumOf { it.durationMinutes }
-
-            if (completedMins < requiredMins) {
-                val isTargetMatching = targetSubject.trim().equals(item.subjectName.trim(), ignoreCase = true) &&
-                        targetChapter.trim().equals(item.chapterName.trim(), ignoreCase = true)
-                if (!isTargetMatching) {
-                    val reqHoursText = if (requiredMins >= 60) "${requiredMins / 60}h" else "${requiredMins}m"
-                    val skipMsg = if (skipCount >= 5) " (Maximum 5 skips reached - 15h study required)" else ""
-                    return Pair(
-                        true,
-                        "You must complete at least $reqHoursText of revision for «${item.chapterName}» in ${item.subjectName} or skip it before starting timer for other subjects.$skipMsg"
-                    )
-                }
+        for (item in mandatoryRevisionNotifications()) {
+            val requirement = revisionRequirement(item) ?: continue
+            val isTargetMatching = targetSubject.trim().equals(item.subjectName.trim(), ignoreCase = true) &&
+                targetChapter.trim().equals(item.chapterName.trim(), ignoreCase = true)
+            if (!isTargetMatching) {
+                val hoursText = if (requirement.first == 3600L) "1 hour of revision" else "10 hours of study"
+                return Pair(
+                    true,
+                    "Complete $hoursText for «${item.chapterName}» in ${item.subjectName} before starting a timer for another subject."
+                )
             }
         }
         return Pair(false, "")
+    }
+
+    fun pendingMandatoryRevision(): AppNotification? =
+        mandatoryRevisionNotifications().firstOrNull { revisionRequirement(it) != null }
+
+    private fun mandatoryRevisionNotifications(): List<AppNotification> {
+        val dueRevisions = activeNotifications.value.filter { it.type == NotificationType.REVISION_DUE }
+        val lockNotifications = dbRevisionSkips.value
+            .groupBy { "${it.subjectName.lowercase(Locale.ROOT)}|${it.chapterName.lowercase(Locale.ROOT)}" }
+            .values
+            .mapNotNull { skips ->
+                val latest = skips.maxByOrNull { it.skippedAtTimestamp } ?: return@mapNotNull null
+                if (skips.size < 5 || latest.scheduledRecapTimestamp > System.currentTimeMillis()) return@mapNotNull null
+                val existingDue = dueRevisions.any {
+                    it.subjectName.equals(latest.subjectName, ignoreCase = true) &&
+                        it.chapterName.equals(latest.chapterName, ignoreCase = true)
+                }
+                if (existingDue) return@mapNotNull null
+                AppNotification(
+                    id = "revision_lock_${latest.subjectName.hashCode()}_${latest.chapterName.hashCode()}",
+                    type = NotificationType.REVISION_DUE,
+                    title = "10-hour chapter study required",
+                    message = "Study «${latest.chapterName}» for 10 hours before starting another subject.",
+                    subjectName = latest.subjectName,
+                    chapterName = latest.chapterName,
+                    timestamp = latest.scheduledRecapTimestamp
+                )
+            }
+        return dueRevisions + lockNotifications
+    }
+
+    private fun revisionRequirement(notification: AppNotification): Pair<Long, Long>? {
+        val matchingSkips = dbRevisionSkips.value.filter {
+            it.subjectName.equals(notification.subjectName, ignoreCase = true) &&
+                it.chapterName.equals(notification.chapterName, ignoreCase = true)
+        }
+        val skipCount = matchingSkips.size
+        val lastSkip = matchingSkips.maxByOrNull { it.skippedAtTimestamp }
+        if (skipCount in 1..5 && lastSkip != null && lastSkip.scheduledRecapTimestamp > System.currentTimeMillis()) {
+            return null
+        }
+
+        val requiredSeconds = if (skipCount >= 5) 10L * 60L * 60L else 60L * 60L
+        val gateStart = if (skipCount >= 5 && lastSkip != null) {
+            lastSkip.scheduledRecapTimestamp
+        } else {
+            notification.timestamp
+        }
+        val completedSeconds = if (skipCount >= 5) {
+            sessions.value.filter { session ->
+                session.subject.equals(notification.subjectName, ignoreCase = true) &&
+                    session.selectedChapter.equals(notification.chapterName, ignoreCase = true) &&
+                    session.startTime >= gateStart
+            }.sumOf { it.actualFocusedSeconds }
+        } else {
+            revisionHistory.value.filter {
+                it.subjectName.equals(notification.subjectName, ignoreCase = true) &&
+                    it.chapterName.equals(notification.chapterName, ignoreCase = true) &&
+                    it.startTime >= gateStart
+            }.sumOf { it.durationSeconds }
+        }
+        return if (completedSeconds < requiredSeconds) requiredSeconds to gateStart else null
     }
 
     fun recordRevision(
@@ -751,16 +597,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         durationMinutes: Int,
         startTime: Long = System.currentTimeMillis() - (durationMinutes.coerceAtLeast(1) * 60 * 1000L),
         endTime: Long = System.currentTimeMillis(),
-        stage: String = "Revision"
+        stage: String = "Revision",
+        durationSeconds: Long = durationMinutes.coerceAtLeast(0) * 60L
     ) {
         val newRecord = RevisionRecord(
             subjectName = subjectName.ifBlank { "General" },
             chapterName = chapterName.ifBlank { "General Revision" },
-            durationMinutes = durationMinutes.coerceAtLeast(1),
+            durationMinutes = (durationSeconds / 60L).toInt().coerceAtLeast(1),
             startTime = startTime,
             endTime = endTime,
             timestamp = endTime,
-            revisionStage = stage.ifBlank { "Revision" }
+            revisionStage = stage.ifBlank { "Revision" },
+            durationSeconds = durationSeconds.coerceAtLeast(0L)
         )
         val existing = _revisionHistory.value.firstOrNull()
         if (existing != null &&
@@ -813,35 +661,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            var lastHandledSessionId: String? = null
-            timerEngine.uiState.collect { state ->
-                if (state.status == TimerStatus.COMPLETED &&
-                    state.completedSessionData != null &&
-                    isRevisionTopic(state.topic)
-                ) {
-                    val session = state.completedSessionData
-                    val sessionKey = revisionCompletionKey(session)
-                    if (sessionKey != lastHandledSessionId) {
-                        lastHandledSessionId = sessionKey
-                        val chapterName = if (state.selectedChapter.isNotBlank()) state.selectedChapter else (if (session.topic.isNotBlank()) session.topic else "General Chapter")
-                        val durMins = (session.actualFocusedSeconds / 60).toInt().coerceAtLeast(1)
-                        recordRevision(
-                            subjectName = session.subject.ifBlank { "General" },
-                            chapterName = chapterName,
-                            durationMinutes = durMins,
-                            stage = if (session.topic.isNotBlank()) session.topic else "Revision"
-                        )
-                    }
-                }
+            timerEngine.savedRevisionSessions.collect { session ->
+                val chapterName = session.selectedChapter.ifBlank { session.topic }
+                recordRevision(
+                    subjectName = session.subject.ifBlank { "General" },
+                    chapterName = chapterName,
+                    durationMinutes = (session.actualFocusedSeconds / 60L).toInt(),
+                    startTime = session.startTime,
+                    endTime = session.endTime,
+                    stage = session.topic.ifBlank { "Revision" },
+                    durationSeconds = session.actualFocusedSeconds
+                )
             }
         }
 
         viewModelScope.launch {
-            combine(activeNotifications, _notificationStateLoaded) { notifications, isLoaded ->
-                if (isLoaded) notifications else emptyList()
-            }.collect { notifications ->
+            activeNotifications.collect { notifications ->
                 notifications.forEach { notif ->
-                    enqueueSystemNotification(notif)
                     repository.insertNotification(
                         NotificationEntity(
                             id = notif.id,
@@ -936,11 +772,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             startTime = if (st > 0) st else ts,
                             endTime = if (et > 0) et else ts,
                             timestamp = ts,
-                            revisionStage = obj.optString("revisionStage", "Revision")
+                            revisionStage = obj.optString("revisionStage", "Revision"),
+                            durationSeconds = obj.optLong(
+                                "durationSeconds",
+                                obj.optInt("durationMinutes", 30) * 60L
+                            )
                         )
                     )
                 }
                 _revisionHistory.value = list
+            }
+
+            val savedRevisionSessions = repository.getAllSessionsList().filter {
+                isRevisionTopic(it.topic) && it.selectedChapter.isNotBlank()
+            }
+            val missingRevisionRecords = savedRevisionSessions
+                .filterNot { session ->
+                    _revisionHistory.value.any {
+                        it.subjectName.equals(session.subject, ignoreCase = true) &&
+                            it.chapterName.equals(session.selectedChapter, ignoreCase = true) &&
+                            it.startTime == session.startTime &&
+                            it.endTime == session.endTime
+                    }
+                }
+                .map { session ->
+                    RevisionRecord(
+                        id = "session_${session.startTime}_${session.endTime}",
+                        subjectName = session.subject.ifBlank { "General" },
+                        chapterName = session.selectedChapter,
+                        durationMinutes = (session.actualFocusedSeconds / 60L).toInt().coerceAtLeast(1),
+                        startTime = session.startTime,
+                        endTime = session.endTime,
+                        timestamp = session.endTime,
+                        revisionStage = session.topic,
+                        durationSeconds = session.actualFocusedSeconds
+                    )
+                }
+            if (missingRevisionRecords.isNotEmpty()) {
+                _revisionHistory.value = missingRevisionRecords + _revisionHistory.value
+                persistRevisionHistory()
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -979,6 +849,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         put("subjectName", rec.subjectName)
                         put("chapterName", rec.chapterName)
                         put("durationMinutes", rec.durationMinutes)
+                        put("durationSeconds", rec.durationSeconds)
                         put("startTime", rec.startTime)
                         put("endTime", rec.endTime)
                         put("timestamp", rec.timestamp)
@@ -1076,15 +947,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Timer Actions
-    fun startTimerWithPreset(preset: PresetEntity) {
+    fun startTimerWithPreset(preset: PresetEntity): Boolean {
         val mode = when (preset.type) {
             "POMODORO" -> SessionMode.POMODORO
             "STOPWATCH" -> SessionMode.STOPWATCH
             else -> SessionMode.COUNTDOWN
         }
+        val chapter = chapters.value.firstOrNull {
+            it.subjectName.equals(preset.subject, ignoreCase = true) &&
+                it.chapterName.equals(preset.topic, ignoreCase = true)
+        }?.chapterName.orEmpty()
+        val (blocked, reason) = isTimerBlockedFor(preset.subject, chapter)
+        if (blocked || !ensureTimerIdle()) {
+            showTimerStartBlock(reason, blocked)
+            return false
+        }
         timerEngine.configureSession(
             mode = mode,
             subject = preset.subject,
+            selectedChapter = chapter,
             topic = preset.topic,
             durationMinutes = preset.durationMinutes,
             pomodoroFocusMin = preset.pomodoroFocusMin,
@@ -1095,28 +976,106 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         timerEngine.startSession()
         _currentTab.value = NavigationTab.TIMER
+        return true
     }
 
-    fun startQuickTimer(durationMinutes: Int, subject: String, mode: SessionMode = SessionMode.COUNTDOWN) {
+    fun startQuickTimer(
+        durationMinutes: Int,
+        subject: String,
+        mode: SessionMode = SessionMode.COUNTDOWN,
+        chapter: String = ""
+    ): Boolean {
+        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
+        if (blocked || !ensureTimerIdle()) {
+            showTimerStartBlock(reason, blocked)
+            return false
+        }
         timerEngine.configureSession(
             mode = mode,
             subject = subject,
+            selectedChapter = chapter,
             durationMinutes = durationMinutes
         )
         timerEngine.startSession()
         _currentTab.value = NavigationTab.TIMER
+        return true
     }
 
-    fun startRevisionTimer(durationMinutes: Int, subject: String, chapter: String) {
+    fun startTimerSession(
+        mode: SessionMode,
+        subject: String,
+        chapter: String = "",
+        topic: String = "",
+        goal: String = "",
+        targetId: String = "",
+        durationMinutes: Int = 25,
+        pomodoroFocusMin: Int = 25,
+        pomodoroShortBreakMin: Int = 5,
+        pomodoroLongBreakMin: Int = 15,
+        pomodoroRounds: Int = 4,
+        autoStartBreaks: Boolean = false,
+        destination: NavigationTab = NavigationTab.TIMER
+    ): Boolean {
+        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
+        if (blocked || !ensureTimerIdle()) {
+            showTimerStartBlock(reason, blocked)
+            return false
+        }
+        timerEngine.configureSession(
+            mode = mode,
+            subject = subject,
+            selectedChapter = chapter,
+            topic = topic,
+            goal = goal,
+            targetId = targetId,
+            durationMinutes = durationMinutes,
+            pomodoroFocusMin = pomodoroFocusMin,
+            pomodoroShortBreakMin = pomodoroShortBreakMin,
+            pomodoroLongBreakMin = pomodoroLongBreakMin,
+            pomodoroRounds = pomodoroRounds,
+            autoStartBreaks = autoStartBreaks
+        )
+        timerEngine.startSession()
+        _currentTab.value = destination
+        return true
+    }
+
+    fun startRevisionTimer(
+        durationMinutes: Int,
+        subject: String,
+        chapter: String,
+        stage: String = "Revision"
+    ): Boolean {
+        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
+        if (blocked || !ensureTimerIdle()) {
+            showTimerStartBlock(reason, blocked)
+            return false
+        }
         timerEngine.configureSession(
             mode = SessionMode.COUNTDOWN,
             subject = subject,
             selectedChapter = chapter,
-            topic = "Revision",
-            durationMinutes = durationMinutes
+            topic = "Revision: $stage",
+            durationMinutes = maxOf(60, durationMinutes)
         )
         timerEngine.startSession()
-        _currentTab.value = NavigationTab.TIMER
+        _currentTab.value = NavigationTab.REVISION_HUB
+        return true
+    }
+
+    private fun ensureTimerIdle(): Boolean {
+        return timerEngine.uiState.value.status == TimerStatus.IDLE
+    }
+
+    private fun showTimerStartBlock(message: String, blocked: Boolean) {
+        viewModelScope.launch {
+            _snackbarMessage.emit(
+                when {
+                    blocked -> message
+                    else -> "Finish or cancel the current timer before starting another session."
+                }
+            )
+        }
     }
 
     // Subject operations
@@ -1353,7 +1312,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             StudyReminderScheduler.scheduleAll(
                 getApplication(),
-                repository.allReminders.first()
+                repository.allReminders.first(),
+                repository.allChapters.first()
             )
         }
     }

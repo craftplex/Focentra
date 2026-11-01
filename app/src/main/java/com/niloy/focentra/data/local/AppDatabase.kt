@@ -36,7 +36,7 @@ data class SyllabusData(
         NotificationEntity::class,
         RevisionSkipEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -103,6 +103,12 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `study_sessions` ADD COLUMN `selectedChapter` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope = CoroutineScope(Dispatchers.IO)): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -110,7 +116,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "focentra_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration()
                     .addCallback(DatabaseCallback(scope))
                     .build()
@@ -133,8 +139,6 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         suspend fun populateInitialData(database: AppDatabase) {
-            val achievementDao = database.achievementDao()
-            val reminderDao = database.reminderDao()
             val settingDao = database.settingDao()
 
             // Achievements
@@ -155,10 +159,6 @@ abstract class AppDatabase : RoomDatabase() {
                 AchievementEntity(id = "deep_work_master", title = "Deep Work Master", description = "Complete a continuous 90+ minute focused session with 5/5 productivity", iconName = "Psychology", category = "SPECIAL", target = 1f)
             )
             achievementDao.insertAchievements(achievements)
-
-            // Reminders
-            reminderDao.insertReminder(ReminderEntity(title = "Morning Focus Session", hour = 9, minute = 0, message = "Ready for today's high-priority study?"))
-            reminderDao.insertReminder(ReminderEntity(title = "Evening Goal Checkup", hour = 20, minute = 0, message = "Keep your study streak alive today!"))
 
             // Default Settings
             settingDao.setSetting(SettingEntity("theme", "midnight"))

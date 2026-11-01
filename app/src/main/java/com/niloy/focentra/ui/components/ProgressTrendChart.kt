@@ -32,7 +32,25 @@ fun ProgressLevelTrendChart(
     dataPoints: List<BarChartItem>,
     modifier: Modifier = Modifier
 ) {
-    if (dataPoints.isEmpty()) return
+    if (dataPoints.isEmpty() || dataPoints.none { it.studyMinutes > 0f }) {
+        Card(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(220.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = "No study activity for this timeframe",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
 
     val animatedFraction by animateFloatAsState(
         targetValue = 1f,

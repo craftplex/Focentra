@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -82,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import com.niloy.focentra.data.local.entity.ChapterEntity
 import com.niloy.focentra.data.local.entity.RevisionSkipEntity
 import com.niloy.focentra.engine.SessionMode
@@ -91,6 +93,9 @@ import com.niloy.focentra.ui.components.parseColorHex
 import com.niloy.focentra.viewmodel.MainViewModel
 import com.niloy.focentra.viewmodel.NotificationType
 import com.niloy.focentra.viewmodel.RevisionRecord
+import com.niloy.focentra.service.revisionStages
+import com.niloy.focentra.service.revisionDueAt
+import com.niloy.focentra.service.revisionStageId
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -102,6 +107,33 @@ data class ScheduledRevisionItem(
     val dueDateMs: Long,
     val daysRemaining: Int
 )
+
+private fun calendarDayDifference(fromMillis: Long, toMillis: Long): Int {
+    val from = Calendar.getInstance().apply {
+        timeInMillis = fromMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val to = Calendar.getInstance().apply {
+        timeInMillis = toMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    var days = 0
+    while (from.before(to)) {
+        from.add(Calendar.DAY_OF_YEAR, 1)
+        days++
+    }
+    while (from.after(to)) {
+        from.add(Calendar.DAY_OF_YEAR, -1)
+        days--
+    }
+    return days
+}
 
 @Composable
 fun RevisionHubScreen(
@@ -229,6 +261,22 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
     var skipDialogData by remember { mutableStateOf<Pair<String, String>?>(null) }
 
+    LaunchedEffect(timerState.status, timerState.completedSessionData) {
+        val completedSession = timerState.completedSessionData
+        if (timerState.status == TimerStatus.COMPLETED &&
+            completedSession != null &&
+            completedSession.topic.contains("revision", ignoreCase = true) &&
+            pendingSaveData == null
+        ) {
+            pendingSaveData = Triple(
+                completedSession.subject,
+                completedSession.selectedChapter,
+                (completedSession.actualFocusedSeconds / 60L).toInt().coerceAtLeast(1)
+            )
+            showSaveDialog = true
+        }
+    }
+
     LaunchedEffect(subjects) {
         if (subjects.isEmpty()) {
             selectedSubject = ""
@@ -251,8 +299,8 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
         }
     }
 
-    val pendingRevision = remember(activeNotifications) {
-        activeNotifications.firstOrNull { it.type == NotificationType.REVISION_DUE }
+    val pendingRevision = remember(activeNotifications, dbRevisionSkips) {
+        viewModel.pendingMandatoryRevision()
     }
 
     if (skipDialogData != null) {
@@ -370,14 +418,13 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                 viewModel.timerEngine.dismissCompletionSheet()
             },
             onSave = { notes ->
-                viewModel.recordRevision(
-                    subjectName = sub,
-                    chapterName = if (ch.isNotBlank()) ch else "General Revision",
-                    durationMinutes = durMins,
-                    stage = if (notes.isNotBlank()) notes else "Revision"
+                viewModel.timerEngine.saveCompletedSessionWithFeedback(
+                    productivityRating = 4,
+                    mood = "GOOD",
+                    energyLevel = "HIGH",
+                    notes = notes,
+                    location = "Desk"
                 )
-                viewModel.timerEngine.cancelSession()
-                viewModel.timerEngine.dismissCompletionSheet()
                 showSaveDialog = false
                 pendingSaveData = null
             }
@@ -458,19 +505,14 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
 
                         Button(
                             onClick = {
-                                if (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED) {
-                                    viewModel.timerEngine.cancelSession()
-                                    viewModel.timerEngine.dismissCompletionSheet()
-                                }
-
-                                viewModel.timerEngine.configureSession(
-                                    mode = SessionMode.STOPWATCH,
+                                viewModel.startRevisionTimer(
+                                    durationMinutes = 60,
                                     subject = pendingRevision.subjectName,
-                                    selectedChapter = pendingRevision.chapterName,
-                                    topic = "Mandatory Revision"
+                                    chapter = pendingRevision.chapterName,
+                                    stage = pendingRevision.title
                                 )
-                                viewModel.timerEngine.startSession()
                             },
+                            enabled = timerState.status != TimerStatus.RUNNING && timerState.status != TimerStatus.PAUSED,
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -612,18 +654,13 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                             warningMessage = blockReason
                             showSelectionWarningDialog = true
                         } else {
-                            if (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED) {
-                                viewModel.timerEngine.cancelSession()
-                                viewModel.timerEngine.dismissCompletionSheet()
-                            }
-
-                            viewModel.timerEngine.configureSession(
+                            viewModel.startTimerSession(
                                 mode = SessionMode.STOPWATCH,
                                 subject = selectedSubject,
-                                selectedChapter = selectedChapter,
-                                topic = "Revision Stopwatch"
+                                chapter = selectedChapter,
+                                topic = "Revision Stopwatch",
+                                destination = NavigationTab.REVISION_HUB
                             )
-                            viewModel.timerEngine.startSession()
                         }
                     }
                 },
@@ -731,15 +768,21 @@ fun RevisionSaveDialog(
 private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
     val timerState by viewModel.timerEngine.uiState.collectAsStateWithLifecycle()
+
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
 
     var selectedSubjectFilter by remember { mutableStateOf("All") }
 
-    val scheduledList = remember(chapters, selectedSubjectFilter) {
+    val scheduledList = remember(chapters, revisionHistory, selectedSubjectFilter, nowMillis) {
         val result = mutableListOf<ScheduledRevisionItem>()
-        val now = System.currentTimeMillis()
-        val oneDayMs = 86_400_000L
-
         val filteredChapters = if (selectedSubjectFilter == "All") {
             chapters
         } else {
@@ -752,20 +795,25 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                 val completedAt = if (ch.completedTimestamp > 0L) ch.completedTimestamp else ch.lastStudiedTimestamp
                 if (completedAt <= 0L) return@forEach
 
-                val stages = listOf(
-                    Pair("1st Day (Quick Recap)", completedAt + 1 * oneDayMs),
-                    Pair("3rd Day (Detailed Review)", completedAt + 3 * oneDayMs),
-                    Pair("7th Day (Problem Solving)", completedAt + 7 * oneDayMs),
-                    Pair("15th Day (Final Master Test)", completedAt + 15 * oneDayMs)
-                )
-
-                stages.forEach { (stage, dueMs) ->
-                    if (dueMs >= now - oneDayMs) {
-                        val daysRemaining = ((dueMs - now) / oneDayMs).toInt()
+                revisionStages.forEach { stage ->
+                    val dueMs = revisionDueAt(completedAt, stage)
+                    val completed = revisionHistory.any {
+                        it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
+                            it.chapterName.equals(ch.chapterName, ignoreCase = true) &&
+                            it.startTime >= completedAt &&
+                        it.durationSeconds >= 60L * 60L &&
+                        revisionStageId(it.revisionStage) == stage.id
+                    }
+                    if (!completed) {
+                        val daysRemaining = if (dueMs < nowMillis) {
+                            -1
+                        } else {
+                            calendarDayDifference(nowMillis, dueMs)
+                        }
                         result.add(
                             ScheduledRevisionItem(
                                 chapter = ch,
-                                stageName = stage,
+                                stageName = stage.displayName,
                                 dueDateMs = dueMs,
                                 daysRemaining = daysRemaining
                             )
@@ -855,17 +903,12 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                         item = item,
                         isTimerRunning = timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED,
                         onStart = {
-                            if (timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED) {
-                                viewModel.timerEngine.cancelSession()
-                                viewModel.timerEngine.dismissCompletionSheet()
-                            }
-                            viewModel.timerEngine.configureSession(
-                                mode = SessionMode.STOPWATCH,
+                            viewModel.startRevisionTimer(
+                                durationMinutes = 60,
                                 subject = item.chapter.subjectName,
-                                selectedChapter = item.chapter.chapterName,
-                                topic = item.stageName
+                                chapter = item.chapter.chapterName,
+                                stage = item.stageName
                             )
-                            viewModel.timerEngine.startSession()
                         }
                     )
                 }
@@ -972,7 +1015,7 @@ private fun ScheduledRevisionCard(
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Start Stopwatch Revision", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                Text("Start 1-Hour Revision", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
             }
         }
     }
@@ -1337,7 +1380,7 @@ fun SkipRevisionDialog(
             Button(
                 onClick = {
                     if (currentSkipCount >= 5) {
-                        errorMessage = "Maximum 5 skips allowed for this chapter."
+                        errorMessage = "Maximum 5 dismissals allowed for this chapter."
                         return@Button
                     }
                     if (reasonText.isBlank()) {
@@ -1346,6 +1389,10 @@ fun SkipRevisionDialog(
                     }
                     if (selectedCal.timeInMillis <= System.currentTimeMillis()) {
                         errorMessage = "Recap time must be in the future."
+                        return@Button
+                    }
+                    if (selectedCal.timeInMillis > System.currentTimeMillis() + 4L * 24L * 60L * 60L * 1000L) {
+                        errorMessage = "Choose a reminder time within the next 4 days."
                         return@Button
                     }
 
@@ -1387,7 +1434,7 @@ fun SkipRevisionDialog(
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "Gaps taken so far: $currentSkipCount/5",
+                            text = "Dismissals used: $currentSkipCount/5",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = if (currentSkipCount >= 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                         )
@@ -1396,7 +1443,7 @@ fun SkipRevisionDialog(
 
                 if (currentSkipCount >= 5) {
                     Text(
-                        text = "Maximum 5 skips allowed for this chapter! You must complete 15 hours of revision before starting other subjects.",
+                        text = "Maximum 5 dismissals reached. After the reminder is due, study this chapter for 10 hours before starting another subject.",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.error
                     )
@@ -1422,6 +1469,15 @@ fun SkipRevisionDialog(
 
                         OutlinedButton(
                             onClick = {
+                                val now = System.currentTimeMillis()
+                                val minDate = Calendar.getInstance().apply {
+                                    timeInMillis = now
+                                    set(Calendar.HOUR_OF_DAY, 0)
+                                    set(Calendar.MINUTE, 0)
+                                    set(Calendar.SECOND, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                                val maxDate = minDate + 5L * 24L * 60L * 60L * 1000L - 1L
                                 DatePickerDialog(
                                     context,
                                     { _, year, month, dayOfMonth ->
@@ -1437,7 +1493,10 @@ fun SkipRevisionDialog(
                                     selectedCal.get(Calendar.YEAR),
                                     selectedCal.get(Calendar.MONTH),
                                     selectedCal.get(Calendar.DAY_OF_MONTH)
-                                ).show()
+                                ).apply {
+                                    datePicker.minDate = minDate
+                                    datePicker.maxDate = maxDate
+                                }.show()
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)

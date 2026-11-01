@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.4] - 2026-11-01
+
+- **Study Trend Graph**: Corrected the Yesterday date range and hardened previous-week boundary calculation so matching study sessions populate the trend.
+- **Subject Distribution**: Show every subject and constrain long subject names so their study-time values remain readable.
+- **Manual Study Data**: Add a date picker for historical manual study entries.
+- **Session History**: Preserve timer-session topics and goals with the session record.
+- **Version Bump**: Updated `versionCode` to `68` and `versionName` to `8.0.4`.
+
 ## [8.0.3] - 2026-11-01
 
 - **Background Notifications**: Schedule motivational and daily-target alerts at the requested times, restore alarms after reboot/time changes, and use exact alarms when Android grants access.

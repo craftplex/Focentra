@@ -333,8 +333,8 @@ object StatisticsEngine {
             }
             TimePeriod.YESTERDAY -> {
                 setStartOfDay(startCal)
-                startCal.add(Calendar.DAY_OF_YEAR, -1)
                 val end = startCal.timeInMillis - 1L
+                startCal.add(Calendar.DAY_OF_YEAR, -1)
                 return sessions.filter { it.startTime in startCal.timeInMillis..end }
             }
             TimePeriod.THIS_WEEK -> {
@@ -348,7 +348,7 @@ object StatisticsEngine {
                 startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                 setStartOfDay(startCal)
                 val end = startCal.timeInMillis - 1L
-                startCal.add(Calendar.WEEK_OF_YEAR, -1)
+                startCal.add(Calendar.DAY_OF_YEAR, -7)
                 val start = startCal.timeInMillis
                 return sessions.filter { it.startTime in start..end }
             }

@@ -72,7 +72,7 @@ fun SubjectPieBar(
 
             // Subject Legend list
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                subjectStats.take(5).forEach { stat ->
+                subjectStats.forEach { stat ->
                     val hrs = stat.focusedMinutes / 60
                     val mins = stat.focusedMinutes % 60
                     Row(
@@ -80,7 +80,10 @@ fun SubjectPieBar(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .size(10.dp)
@@ -91,14 +94,17 @@ fun SubjectPieBar(
                             Text(
                                 text = stat.subject,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
 
                         Text(
                             text = "${if (hrs > 0) "${hrs}h " else ""}${mins}m (${stat.percentage.toInt()}%)",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
                     }
                 }

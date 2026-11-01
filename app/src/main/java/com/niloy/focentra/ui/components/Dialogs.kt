@@ -22,6 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.niloy.focentra.data.local.entity.StudySessionEntity
+import java.text.DateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.TimeZone
 
 @Composable
 fun FocentraPopupDialog(
@@ -901,12 +905,23 @@ fun ManualStudyDataDialog(
     subjects: List<String>,
     examTargets: List<com.niloy.focentra.viewmodel.ExamTarget> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (subject: String, topic: String, durationMinutes: Int, category: String, notes: String, rating: Int, targetId: String) -> Unit
+    onSave: (
+        subject: String,
+        topic: String,
+        durationMinutes: Int,
+        category: String,
+        notes: String,
+        rating: Int,
+        targetId: String,
+        timestamp: Long
+    ) -> Unit
 ) {
     var subject by remember { mutableStateOf(subjects.firstOrNull() ?: "General") }
     var customSubject by remember { mutableStateOf("") }
     var useCustomSubject by remember { mutableStateOf(subjects.isEmpty()) }
     var topic by remember { mutableStateOf("") }
+    var sessionTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var durationMinutesStr by remember { mutableStateOf("30") }
     var category by remember { mutableStateOf("Study") }
     var notes by remember { mutableStateOf("") }
@@ -914,6 +929,9 @@ fun ManualStudyDataDialog(
     var selectedTargetId by remember { mutableStateOf("") }
 
     val categories = listOf("Study", "Exam Prep", "Assignment", "Revision", "Research")
+    val sessionDateText = remember(sessionTimestamp) {
+        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(sessionTimestamp))
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -994,6 +1012,16 @@ fun ManualStudyDataDialog(
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
                 )
+
+                OutlinedButton(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Date: $sessionDateText")
+                }
 
                 // Duration Input
                 OutlinedTextField(
@@ -1094,7 +1122,16 @@ fun ManualStudyDataDialog(
                     val finalSubject = if (useCustomSubject) customSubject.ifBlank { "General" } else subject
                     val durMin = durationMinutesStr.toIntOrNull() ?: 30
                     if (durMin > 0) {
-                        onSave(finalSubject, topic, durMin, category, notes, rating, selectedTargetId)
+                        onSave(
+                            finalSubject,
+                            topic,
+                            durMin,
+                            category,
+                            notes,
+                            rating,
+                            selectedTargetId,
+                            sessionTimestamp
+                        )
                         onDismiss()
                     }
                 },
@@ -1109,6 +1146,68 @@ fun ManualStudyDataDialog(
             }
         }
     )
+
+    if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = manualDatePickerMillisForTimestamp(sessionTimestamp)
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { selectedDateMillis ->
+                            sessionTimestamp = manualSessionTimestampForDate(
+                                selectedDateMillis = selectedDateMillis,
+                                timestampWithTime = sessionTimestamp
+                            )
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
+internal fun manualDatePickerMillisForTimestamp(timestamp: Long): Long {
+    val localDate = Calendar.getInstance().apply { timeInMillis = timestamp }
+    return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(
+            localDate.get(Calendar.YEAR),
+            localDate.get(Calendar.MONTH),
+            localDate.get(Calendar.DAY_OF_MONTH),
+            0,
+            0,
+            0
+        )
+    }.timeInMillis
+}
+
+internal fun manualSessionTimestampForDate(
+    selectedDateMillis: Long,
+    timestampWithTime: Long
+): Long {
+    val selectedDate = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = selectedDateMillis
+    }
+    return Calendar.getInstance().apply {
+        timeInMillis = timestampWithTime
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.YEAR, selectedDate.get(Calendar.YEAR))
+        set(Calendar.MONTH, selectedDate.get(Calendar.MONTH))
+        set(Calendar.DAY_OF_MONTH, selectedDate.get(Calendar.DAY_OF_MONTH))
+    }.timeInMillis
 }
 
 @Composable

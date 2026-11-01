@@ -901,6 +901,7 @@ fun SessionCompletionDialog(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun ManualStudyDataDialog(
     subjects: List<String>,
     examTargets: List<com.niloy.focentra.viewmodel.ExamTarget> = emptyList(),

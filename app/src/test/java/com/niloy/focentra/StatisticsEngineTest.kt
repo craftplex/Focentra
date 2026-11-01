@@ -125,6 +125,26 @@ class StatisticsEngineTest {
         assertEquals(0f, stats.chartData[6].studyMinutes, 0.01f)
     }
 
+    @Test
+    fun yesterdayTrendIncludesYesterdaySessionsInTheCorrectTimeBucket() {
+        val yesterdayAtNoon = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, -1)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val stats = StatisticsEngine.calculatePeriodStats(
+            listOf(session(yesterdayAtNoon, 90 * 60L)),
+            TimePeriod.YESTERDAY
+        )
+
+        assertEquals(90 * 60L, stats.totalFocusedSeconds)
+        assertEquals(6, stats.chartData.size)
+        assertEquals(90f, stats.chartData[3].studyMinutes, 0.01f)
+    }
+
     private fun session(startTime: Long, focusedSeconds: Long) = StudySessionEntity(
         startTime = startTime,
         endTime = startTime + focusedSeconds * 1_000L,

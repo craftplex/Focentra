@@ -360,7 +360,7 @@ fun TimerScreen(
             subjects = subjects.map { it.name },
             examTargets = examTargets,
             onDismiss = { showManualDataInputDialog = false },
-            onSave = { subject, topic, durMin, category, notes, rating, targetId ->
+            onSave = { subject, topic, durMin, category, notes, rating, targetId, timestamp ->
                 viewModel.addManualSession(
                     subject = subject,
                     topic = topic,
@@ -368,7 +368,8 @@ fun TimerScreen(
                     category = category,
                     notes = notes,
                     rating = rating,
-                    targetId = targetId
+                    targetId = targetId,
+                    timestamp = timestamp
                 )
             }
         )

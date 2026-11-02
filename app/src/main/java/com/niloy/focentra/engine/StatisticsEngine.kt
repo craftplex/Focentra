@@ -99,7 +99,7 @@ object StatisticsEngine {
         sessions: List<StudySessionEntity>,
         chapters: List<ChapterEntity>
     ): Map<Long, Long> {
-        val totals = mutableMapOf<Long, Long>()
+        val totals = chapters.associate { it.id to it.historicalStudySeconds.coerceAtLeast(0L) }.toMutableMap()
         sessions.forEach { session ->
             val selectedChapter = session.selectedChapter.trim()
             val chapter = chapters.firstOrNull {

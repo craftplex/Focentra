@@ -299,6 +299,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addHistoricalChapterStudyTime(subjectName: String, chapterName: String, durationMinutes: Int) {
+        if (durationMinutes <= 0) return
+        viewModelScope.launch {
+            val chapter = chapters.value.firstOrNull {
+                it.subjectName.equals(subjectName, ignoreCase = true) &&
+                    it.chapterName.equals(chapterName, ignoreCase = true)
+            }
+            if (chapter == null) {
+                _snackbarMessage.emit("Chapter not found; no study time was added.")
+                return@launch
+            }
+            val addedSeconds = durationMinutes.toLong() * 60L
+            repository.updateChapter(
+                chapter.copy(historicalStudySeconds = chapter.historicalStudySeconds + addedSeconds)
+            )
+            _snackbarMessage.emit("Earlier study time added to the subject goal.")
+        }
+    }
+
     fun deleteChapter(chapter: ChapterEntity) {
         viewModelScope.launch {
             repository.deleteChapter(chapter)

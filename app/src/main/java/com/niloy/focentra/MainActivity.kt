@@ -53,8 +53,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNotificationIntent(intent: android.content.Intent?) {
-        if (intent?.getStringExtra("navigate_to") == "NOTIFICATIONS") {
-            viewModel.navigateTo(NavigationTab.NOTIFICATIONS)
+        when (intent?.getStringExtra("navigate_to")) {
+            "NOTIFICATIONS" -> viewModel.navigateTo(NavigationTab.NOTIFICATIONS)
+            "REVISION_HUB" -> viewModel.navigateTo(NavigationTab.REVISION_HUB)
         }
     }
 

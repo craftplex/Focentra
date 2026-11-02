@@ -32,7 +32,7 @@ fun ProgressLevelTrendChart(
     dataPoints: List<BarChartItem>,
     modifier: Modifier = Modifier
 ) {
-    if (dataPoints.isEmpty() || dataPoints.none { it.studyMinutes > 0f }) {
+    if (dataPoints.isEmpty()) {
         Card(
             modifier = modifier
                 .fillMaxWidth()

@@ -208,7 +208,13 @@ object StudyReminderNotifications {
         StudyReminderScheduler.scheduleOneTime(context, recapTimestamp, pendingIntent)
     }
 
-    fun post(context: Context, notificationId: Int, title: String, message: String): Boolean {
+    fun post(
+        context: Context,
+        notificationId: Int,
+        title: String,
+        message: String,
+        navigateTo: String = "NOTIFICATIONS"
+    ): Boolean {
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -216,11 +222,12 @@ object StudyReminderNotifications {
 
         val openAppIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("navigate_to", "NOTIFICATIONS")
+            data = Uri.parse("focentra://notification/$notificationId/$navigateTo")
+            putExtra("navigate_to", navigateTo)
         }
         val contentIntent = PendingIntent.getActivity(
             context,
-            0,
+            notificationId,
             openAppIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -555,7 +562,13 @@ class StudyReminderReceiver : BroadcastReceiver() {
                             val title = StudyReminderScheduler.revisionTitle(stage) ?: "Revision Due"
                             val message = "সময় হয়েছে «${chapter.chapterName}» (${chapter.subjectName}) অধ্যায়টি অন্তত ১ ঘণ্টা রিভিশন করার।"
                             val id = "rev_${chapter.id}_$stage"
-                            StudyReminderNotifications.post(context, id.hashCode(), title, message)
+                            StudyReminderNotifications.post(
+                                context,
+                                id.hashCode(),
+                                title,
+                                message,
+                                navigateTo = "REVISION_HUB"
+                            )
                             app.repository.insertNotification(
                                 NotificationEntity(
                                     id = id,
@@ -598,7 +611,13 @@ class StudyReminderReceiver : BroadcastReceiver() {
                         if (revisedSinceSkip) return@launch
                         val id = "rev_recap_${subjectName.hashCode()}_${chapterName.hashCode()}_${dueAt}"
 
-                        StudyReminderNotifications.post(context, id.hashCode(), title, message)
+                        StudyReminderNotifications.post(
+                            context,
+                            id.hashCode(),
+                            title,
+                            message,
+                            navigateTo = "REVISION_HUB"
+                        )
                         app.repository.insertNotification(
                             NotificationEntity(
                                 id = id,

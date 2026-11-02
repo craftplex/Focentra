@@ -126,9 +126,11 @@ object StatisticsEngine {
         dailyGoalMinutes: Int = 480
     ): PeriodStatistics {
         val filtered = filterSessionsByPeriod(sessions, period)
+        val chartData = buildChartItems(filtered, period, dailyGoalMinutes.toFloat())
         if (filtered.isEmpty()) {
             return PeriodStatistics(
                 period = period,
+                chartData = chartData,
                 smartInsights = listOf("Start your first study session to generate insights.")
             )
         }
@@ -254,8 +256,6 @@ object StatisticsEngine {
         }.sortedBy { it.retentionPercentage }
 
         // Build Bar Chart Data based on period
-        val chartData = buildChartItems(filtered, period, dailyGoalMinutes.toFloat())
-
         // Smart Offline Insights
         val insights = mutableListOf<String>()
         insights.add("Overall Focus Score: $calculatedFocusScore/100 across $count focus sessions.")
@@ -315,15 +315,25 @@ object StatisticsEngine {
         )
     }
 
-    private fun filterSessionsByPeriod(sessions: List<StudySessionEntity>, period: TimePeriod): List<StudySessionEntity> {
-        val now = Calendar.getInstance()
-        val startCal = Calendar.getInstance()
+    internal fun filterSessionsByPeriod(
+        sessions: List<StudySessionEntity>,
+        period: TimePeriod,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<StudySessionEntity> {
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val startCal = Calendar.getInstance().apply { timeInMillis = nowMillis }
 
         fun setStartOfDay(calendar: Calendar) {
             calendar.set(Calendar.HOUR_OF_DAY, 0)
             calendar.set(Calendar.MINUTE, 0)
             calendar.set(Calendar.SECOND, 0)
             calendar.set(Calendar.MILLISECOND, 0)
+        }
+
+        fun setStartOfWeek(calendar: Calendar) {
+            setStartOfDay(calendar)
+            val daysSinceMonday = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7
+            calendar.add(Calendar.DAY_OF_YEAR, -daysSinceMonday)
         }
 
         when (period) {
@@ -333,24 +343,19 @@ object StatisticsEngine {
             }
             TimePeriod.YESTERDAY -> {
                 setStartOfDay(startCal)
-                val end = startCal.timeInMillis - 1L
+                val endExclusive = startCal.timeInMillis
                 startCal.add(Calendar.DAY_OF_YEAR, -1)
-                return sessions.filter { it.startTime in startCal.timeInMillis..end }
+                return sessions.filter { it.startTime >= startCal.timeInMillis && it.startTime < endExclusive }
             }
             TimePeriod.THIS_WEEK -> {
-                startCal.firstDayOfWeek = Calendar.MONDAY
-                startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                setStartOfDay(startCal)
+                setStartOfWeek(startCal)
                 return sessions.filter { it.startTime in startCal.timeInMillis..now.timeInMillis }
             }
             TimePeriod.LAST_WEEK -> {
-                startCal.firstDayOfWeek = Calendar.MONDAY
-                startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                setStartOfDay(startCal)
-                val end = startCal.timeInMillis - 1L
+                setStartOfWeek(startCal)
+                val endExclusive = startCal.timeInMillis
                 startCal.add(Calendar.DAY_OF_YEAR, -7)
-                val start = startCal.timeInMillis
-                return sessions.filter { it.startTime in start..end }
+                return sessions.filter { it.startTime >= startCal.timeInMillis && it.startTime < endExclusive }
             }
             TimePeriod.THIS_MONTH -> {
                 startCal.set(Calendar.DAY_OF_MONTH, 1)
@@ -360,11 +365,11 @@ object StatisticsEngine {
             TimePeriod.LAST_MONTH -> {
                 startCal.set(Calendar.DAY_OF_MONTH, 1)
                 setStartOfDay(startCal)
-                val end = startCal.timeInMillis - 1L
+                val endExclusive = startCal.timeInMillis
                 startCal.add(Calendar.MONTH, -1)
                 startCal.set(Calendar.DAY_OF_MONTH, 1)
                 val start = startCal.timeInMillis
-                return sessions.filter { it.startTime in start..end }
+                return sessions.filter { it.startTime >= start && it.startTime < endExclusive }
             }
             TimePeriod.THIS_YEAR -> {
                 startCal.set(Calendar.DAY_OF_YEAR, 1)

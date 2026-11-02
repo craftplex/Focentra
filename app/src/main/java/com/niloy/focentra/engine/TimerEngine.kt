@@ -242,9 +242,9 @@ class TimerEngine private constructor(
             return
         }
 
-        val nowElapsed = SystemClock.elapsedRealtime()
-        sessionStartMs = System.currentTimeMillis()
-        runningSegmentStartMs = nowElapsed
+        val now = System.currentTimeMillis()
+        sessionStartMs = now
+        runningSegmentStartMs = SystemClock.elapsedRealtime()
         pauseSegmentStartMs = 0L
         priorFocusedSeconds = 0L
         priorPausedSeconds = 0L

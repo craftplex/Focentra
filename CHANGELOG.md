@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.6] - 2026-11-02
+
+- **Release Signing**: Fail release packaging when the configured keystore or credentials are missing; remove the publicly known signing fallback from Gradle and GitHub Actions.
+- **Daynexa Integration**: Restrict the exported sessions provider and permission-gated broadcasts to apps signed with Focentra's signing certificate.
+- **Timer Accounting**: Use monotonic elapsed time for running and paused segments so wall-clock changes do not skew a session; add deterministic background/screen-off and pause/resume coverage.
+- **SDK Documentation**: Align the documented Android SDK level with the project's API 35 build configuration.
+- **Regression Coverage**: Add daily/monthly statistics checks and JSON backup import checks for duplicate subjects and larger session archives.
+- **Version Bump**: Updated `versionCode` to `70` and `versionName` to `8.0.6`.
+
 ## [8.0.5] - 2026-11-02
 
 - **Study Timer UI**: Reduce the full-screen accent tint to keep timer colors balanced and improve readability.

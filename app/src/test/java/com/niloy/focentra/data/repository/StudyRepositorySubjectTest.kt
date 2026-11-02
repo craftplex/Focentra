@@ -219,6 +219,47 @@ class StudyRepositorySubjectTest {
     }
 
     @Test
+    fun jsonImportDeduplicatesSubjectsCaseInsensitivelyAndRemapsTopicLinks() = runBlocking {
+        val backup = """
+            {
+              "subjects": [
+                {"id": 10, "name": "Physics"},
+                {"id": 11, "name": "physics"}
+              ],
+              "topics": [
+                {"subjectId": 11, "subjectName": "physics", "name": "Motion"}
+              ]
+            }
+        """.trimIndent()
+
+        assertTrue(repository.importDataJson(backup, replaceExisting = true))
+
+        val importedSubject = database.subjectDao().getAllSubjects().single()
+        val importedTopic = database.topicDao().getAllTopics().single()
+        assertEquals("Physics", importedSubject.name)
+        assertEquals(importedSubject.id, importedTopic.subjectId)
+    }
+
+    @Test
+    fun largeJsonSessionArchiveImportsEveryRecord() = runBlocking {
+        val sessions = (1..2_500).joinToString(",") { index ->
+            """{"startTime":$index,"endTime":${index + 60_000},"durationSeconds":60,"actualFocusedSeconds":60,"pausedSeconds":0,"sessionType":"COUNTDOWN","subject":"Subject $index"}"""
+        }
+        val backup = """{"sessions":[$sessions]}"""
+
+        assertTrue(
+            repository.importDataJsonStream(
+                backup.byteInputStream(Charsets.UTF_8),
+                replaceExisting = true
+            )
+        )
+
+        val importedSessions = database.sessionDao().getAllSessions()
+        assertEquals(2_500, importedSessions.size)
+        assertEquals("Subject 2500", importedSessions.first().subject)
+    }
+
+    @Test
     fun streamedBackupRestoresChaptersAndTheirSubjectLinks() = runBlocking {
         val subjectId = repository.insertSubject(SubjectEntity(name = "Physics"))
         database.topicDao().insertTopic(

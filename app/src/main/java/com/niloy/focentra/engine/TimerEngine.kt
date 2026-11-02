@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -102,6 +103,35 @@ internal data class PomodoroSessionTotals(
 
     val durationSeconds: Long
         get() = focusedSeconds + breakSeconds + pausedSeconds
+}
+
+internal data class TimerTimeSnapshot(
+    val focusedSeconds: Long,
+    val pausedSeconds: Long
+)
+
+internal fun timerTimeSnapshot(
+    status: TimerStatus,
+    priorFocusedSeconds: Long,
+    runningSegmentStartMs: Long,
+    priorPausedSeconds: Long,
+    pauseSegmentStartMs: Long,
+    nowMillis: Long
+): TimerTimeSnapshot {
+    val activeSeconds = if (status == TimerStatus.RUNNING && runningSegmentStartMs > 0L) {
+        ((nowMillis - runningSegmentStartMs) / 1000L).coerceAtLeast(0L)
+    } else {
+        0L
+    }
+    val currentPauseSeconds = if (status == TimerStatus.PAUSED && pauseSegmentStartMs > 0L) {
+        ((nowMillis - pauseSegmentStartMs) / 1000L).coerceAtLeast(0L)
+    } else {
+        0L
+    }
+    return TimerTimeSnapshot(
+        focusedSeconds = priorFocusedSeconds.coerceAtLeast(0L) + activeSeconds,
+        pausedSeconds = priorPausedSeconds.coerceAtLeast(0L) + currentPauseSeconds
+    )
 }
 
 internal fun pomodoroPauseStartedAt(autoStart: Boolean, nowMillis: Long): Long =
@@ -214,7 +244,7 @@ class TimerEngine private constructor(
 
         val now = System.currentTimeMillis()
         sessionStartMs = now
-        runningSegmentStartMs = now
+        runningSegmentStartMs = SystemClock.elapsedRealtime()
         pauseSegmentStartMs = 0L
         priorFocusedSeconds = 0L
         priorPausedSeconds = 0L
@@ -233,8 +263,8 @@ class TimerEngine private constructor(
     fun pauseSession() {
         if (_uiState.value.status != TimerStatus.RUNNING) return
 
-        val now = System.currentTimeMillis()
-        val segmentSeconds = (now - runningSegmentStartMs) / 1000L
+        val now = SystemClock.elapsedRealtime()
+        val segmentSeconds = ((now - runningSegmentStartMs) / 1000L).coerceAtLeast(0L)
         priorFocusedSeconds += segmentSeconds
         pauseSegmentStartMs = now
 
@@ -253,9 +283,9 @@ class TimerEngine private constructor(
     fun resumeSession() {
         if (_uiState.value.status != TimerStatus.PAUSED) return
 
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         if (pauseSegmentStartMs > 0L) {
-            priorPausedSeconds += (now - pauseSegmentStartMs) / 1000L
+            priorPausedSeconds += ((now - pauseSegmentStartMs) / 1000L).coerceAtLeast(0L)
         }
         runningSegmentStartMs = now
         pauseSegmentStartMs = 0L
@@ -511,7 +541,7 @@ class TimerEngine private constructor(
     private fun tick() {
         if (_uiState.value.status != TimerStatus.RUNNING) return
 
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         val currentFocused = currentFocusedSeconds(now)
         val totalElapsed = currentFocused + priorPausedSeconds
 
@@ -635,9 +665,9 @@ class TimerEngine private constructor(
     }
 
     private fun resetPhaseTimers(autoStart: Boolean) {
-        val now = System.currentTimeMillis()
+        val now = SystemClock.elapsedRealtime()
         runningSegmentStartMs = now
-        pauseSegmentStartMs = if (autoStart) 0L else now
+        pauseSegmentStartMs = pomodoroPauseStartedAt(autoStart, now)
         priorFocusedSeconds = 0L
         priorPausedSeconds = 0L
 
@@ -654,22 +684,23 @@ class TimerEngine private constructor(
         updateServiceState(_uiState.value.status)
     }
 
-    private fun currentFocusedSeconds(nowMillis: Long = System.currentTimeMillis()): Long {
-        val segmentSeconds = if (_uiState.value.status == TimerStatus.RUNNING) {
-            (nowMillis - runningSegmentStartMs) / 1000L
-        } else {
-            0L
-        }
-        return priorFocusedSeconds + segmentSeconds
+    private fun currentFocusedSeconds(nowMillis: Long = SystemClock.elapsedRealtime()): Long {
+        return currentTimeSnapshot(nowMillis).focusedSeconds
     }
 
     private fun currentPausedSeconds(): Long {
-        return priorPausedSeconds + if (_uiState.value.status == TimerStatus.PAUSED && pauseSegmentStartMs > 0L) {
-            (System.currentTimeMillis() - pauseSegmentStartMs) / 1000L
-        } else {
-            0L
-        }
+        return currentTimeSnapshot(SystemClock.elapsedRealtime()).pausedSeconds
     }
+
+    private fun currentTimeSnapshot(nowMillis: Long): TimerTimeSnapshot =
+        timerTimeSnapshot(
+            status = _uiState.value.status,
+            priorFocusedSeconds = priorFocusedSeconds,
+            runningSegmentStartMs = runningSegmentStartMs,
+            priorPausedSeconds = priorPausedSeconds,
+            pauseSegmentStartMs = pauseSegmentStartMs,
+            nowMillis = nowMillis
+        )
 
     private fun computeRemainingSeconds(
         ui: TimerUiState,

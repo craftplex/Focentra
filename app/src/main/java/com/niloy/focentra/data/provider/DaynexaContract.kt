@@ -36,6 +36,11 @@ object DaynexaContract {
     const val ACTION_SESSION_COMPLETED = "com.focentra.ACTION_SESSION_COMPLETED"
 
     /**
+     * Signature-level permission required for all session-data integrations.
+     */
+    const val PERMISSION_READ_SESSIONS = "com.focentra.permission.READ_SESSIONS"
+
+    /**
      * Schema Version of the Daynexa Integration API.
      */
     const val SCHEMA_VERSION = 1

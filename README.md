@@ -9,7 +9,7 @@
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Material_3-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Offline First](https://img.shields.io/badge/Architecture-100%25_Offline_First-00897B?style=for-the-badge&logo=sqlite&logoColor=white)](#-privacy--offline-first-guarantee)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/craftplex/Focentra/actions)
-[![Release](https://img.shields.io/badge/Release-v8.0.5-8B5CF6?style=for-the-badge&logo=github)](https://github.com/craftplex/Focentra/releases)
+[![Release](https://img.shields.io/badge/Release-v8.0.6-8B5CF6?style=for-the-badge&logo=github)](https://github.com/craftplex/Focentra/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge)](LICENSE)
 
 <br/>
@@ -168,7 +168,7 @@ You can download the latest Android APK directly from the official release chann
 ### Installation Guide
 
 1. Go to [GitHub Releases](https://github.com/craftplex/Focentra/releases) or the [GitHub Actions](https://github.com/craftplex/Focentra/actions) tab.
-2. Download the APK file (`focentra-v8.0.5-release.apk` or a debug artifact).
+2. Download the APK file (`focentra-v8.0.6-release.apk` or a debug artifact).
 3. Open your device’s Downloads folder and tap the APK.
 4. If prompted, enable “Install unknown apps” in Android settings.
 5. Install and launch Focentra.
@@ -227,6 +227,7 @@ Focentra supports a secure, privacy-preserving app-to-app integration with Dayne
 ### Security & Consent Control
 
 - User consent must be enabled under Settings → Integrations → Daynexa.
+- The permission is signature-protected: the companion app must be signed with the same signing certificate as Focentra.
 - Provider and broadcast endpoints are read-only.
 - Inserts, updates, and deletes are rejected.
 - Broadcast delivery is permission-gated using `com.focentra.permission.READ_SESSIONS`.
@@ -343,7 +344,7 @@ Focentra includes full data portability under Settings → Data & Backup:
 
 - JDK 17 (Temurin recommended)
 - Android Studio Ladybug (2024.2.1+) or newer
-- Android SDK with API level 36
+- Android SDK with API level 35 (the configured `compileSdk` and `targetSdk`)
 - Minimum SDK: 24
 - Git 2.30+
 

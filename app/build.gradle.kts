@@ -1,5 +1,3 @@
-import java.io.File
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
@@ -9,11 +7,10 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
-val defaultKeystoreFile = rootProject.file("release-keystore.jks")
-val releaseKeystorePath = System.getenv("KEYSTORE_PATH") ?: if (defaultKeystoreFile.isFile) defaultKeystoreFile.absolutePath else null
-val releaseStorePassword = System.getenv("STORE_PASSWORD") ?: if (defaultKeystoreFile.isFile) "focentra123456" else null
-val releaseKeyAlias = System.getenv("KEY_ALIAS") ?: if (defaultKeystoreFile.isFile) "focentra" else null
-val releaseKeyPassword = System.getenv("KEY_PASSWORD") ?: if (defaultKeystoreFile.isFile) "focentra123456" else null
+val releaseKeystorePath = System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+val releaseStorePassword = System.getenv("STORE_PASSWORD")
+val releaseKeyAlias = System.getenv("KEY_ALIAS")
+val releaseKeyPassword = System.getenv("KEY_PASSWORD")
 val releaseKeystoreFile = releaseKeystorePath?.let(::file)
 val releaseSigningConfigured = releaseKeystoreFile?.isFile == true &&
   !releaseStorePassword.isNullOrBlank() &&
@@ -28,8 +25,8 @@ android {
     applicationId = "com.niloy.focentra"
     minSdk = 24
     targetSdk = 35
-    versionCode = 69
-    versionName = "8.0.5"
+    versionCode = 70
+    versionName = "8.0.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -82,8 +79,8 @@ abstract class ValidateReleaseSigningTask : DefaultTask() {
   @TaskAction
   fun validate() {
     if (!releaseSigningConfigured.get()) {
-      logger.warn(
-        "Release signing is not configured. Building release APK with fallback signing."
+      throw GradleException(
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD."
       )
     }
   }
@@ -96,7 +93,7 @@ val validateReleaseSigning = tasks.register<ValidateReleaseSigningTask>("validat
 
 // Release validation task only needed if release signing is explicitly targeted
 tasks.configureEach {
-  if (name == "assembleRelease") {
+  if (name in setOf("assembleRelease", "bundleRelease", "packageRelease")) {
     dependsOn(validateReleaseSigning)
   }
 }

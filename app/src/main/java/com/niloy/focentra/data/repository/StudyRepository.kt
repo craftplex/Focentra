@@ -556,7 +556,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     // 3. SECURE BROADCAST: Use permission protection
                     // Only apps that declare com.focentra.permission.READ_SESSIONS in their manifest can receive this.
                     // This prevents data leakage to unauthorized apps.
-                    appContext.sendBroadcast(intent, "com.focentra.permission.READ_SESSIONS")
+                    appContext.sendBroadcast(intent, DaynexaContract.PERMISSION_READ_SESSIONS)
                 }
             } catch (e: Exception) {
                 // Silently fail integration broadcasts to avoid breaking core app flow

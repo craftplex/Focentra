@@ -9,15 +9,15 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to publish (for example, v8.0.5)'
+        description: 'Release tag to publish (for example, v8.0.6)'
         required: false
-        default: 'v8.0.5'
+        default: 'v8.0.6'
 
 permissions:
   contents: write
 
 env:
-  APP_VERSION: v8.0.5
+  APP_VERSION: v8.0.6
 
 jobs:
   build:
@@ -47,26 +47,26 @@ jobs:
           KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS_SECRET: ${{ secrets.KEY_ALIAS }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD_SECRET" ] && [ -n "$KEY_PASSWORD_SECRET" ] && [ -n "$KEY_ALIAS_SECRET" ]; then
-            if echo "$KEYSTORE_BASE64" | base64 --decode > release-keystore.jks && [ -s release-keystore.jks ] && keytool -list -keystore release-keystore.jks -storepass "$STORE_PASSWORD_SECRET" -alias "$KEY_ALIAS_SECRET" > /dev/null 2>&1; then
-              echo "Using configured repository release keystore."
-              echo "KEYSTORE_FILE=$(pwd)/release-keystore.jks" >> "$GITHUB_ENV"
-              echo "STORE_PASS=$STORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
-              echo "KEY_PASS=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
-              echo "KEY_ALIAS_ENV=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
-              exit 0
-            else
-              echo "::warning::Configured release keystore secrets were invalid. Falling back to default release keystore."
-            fi
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$STORE_PASSWORD_SECRET" ] || [ -z "$KEY_PASSWORD_SECRET" ] || [ -z "$KEY_ALIAS_SECRET" ]; then
+            echo "::error::Release signing secrets are missing. Configure KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD, and KEY_ALIAS."
+            exit 1
           fi
 
-          echo "Configuring fallback release keystore..."
-          rm -f release-keystore.jks
-          keytool -genkeypair -v -keystore release-keystore.jks -storepass focentra123456 -alias focentra -keypass focentra123456 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Focentra Release,O=Focentra,C=US"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > release-keystore.jks || [ ! -s release-keystore.jks ]; then
+            echo "::error::KEYSTORE_BASE64 is not a valid, non-empty base64-encoded keystore."
+            exit 1
+          fi
+          if ! keytool -list -keystore release-keystore.jks -storepass "$STORE_PASSWORD_SECRET" -alias "$KEY_ALIAS_SECRET" > /dev/null 2>&1; then
+            echo "::error::The configured keystore, store password, or key alias is invalid."
+            exit 1
+          fi
+
+          echo "Using configured repository release keystore."
           echo "KEYSTORE_FILE=$(pwd)/release-keystore.jks" >> "$GITHUB_ENV"
-          echo "STORE_PASS=focentra123456" >> "$GITHUB_ENV"
-          echo "KEY_PASS=focentra123456" >> "$GITHUB_ENV"
-          echo "KEY_ALIAS_ENV=focentra" >> "$GITHUB_ENV"
+          echo "STORE_PASS=$STORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "KEY_PASS=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS_ENV=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
 
       - name: Recreate .env file
         env:

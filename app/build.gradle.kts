@@ -28,8 +28,8 @@ android {
     applicationId = "com.niloy.focentra"
     minSdk = 24
     targetSdk = 35
-    versionCode = 68
-    versionName = "8.0.4"
+    versionCode = 69
+    versionName = "8.0.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -378,8 +378,8 @@ fun TimerScreen(
     // Background breathing animation
     val infiniteTransition = rememberInfiniteTransition(label = "TimerBreathingGradient")
     val animAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.08f,
-        targetValue = 0.18f,
+        initialValue = 0.02f,
+        targetValue = 0.06f,
         animationSpec = infiniteRepeatable(
             animation = tween(4000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse

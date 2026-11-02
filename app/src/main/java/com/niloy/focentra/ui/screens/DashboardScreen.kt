@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -81,6 +82,11 @@ fun DashboardScreen(
     var targetToEdit by remember { mutableStateOf<com.niloy.focentra.viewmodel.ExamTarget?>(null) }
     var targetToDelete by remember { mutableStateOf<com.niloy.focentra.viewmodel.ExamTarget?>(null) }
     var pendingQuickTimerMode by remember { mutableStateOf<Pair<SessionMode, Int>?>(null) }
+    val quickModesEnabled = timerState.status == TimerStatus.IDLE
+
+    LaunchedEffect(quickModesEnabled) {
+        if (!quickModesEnabled) pendingQuickTimerMode = null
+    }
 
     val dailyGoalMins = goals.find { it.periodType == "DAILY" }?.targetMinutes ?: 480
     val progressPct = if (dailyGoalMins > 0) {
@@ -312,7 +318,10 @@ fun DashboardScreen(
                             .height(105.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                            .clickable { pendingQuickTimerMode = Pair(SessionMode.COUNTDOWN, 25) },
+                            .alpha(if (quickModesEnabled) 1f else 0.45f)
+                            .clickable(enabled = quickModesEnabled) {
+                                pendingQuickTimerMode = Pair(SessionMode.COUNTDOWN, 25)
+                            },
                         shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surface,
                         shadowElevation = 1.dp
@@ -362,7 +371,10 @@ fun DashboardScreen(
                             .height(105.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                            .clickable { pendingQuickTimerMode = Pair(SessionMode.POMODORO, 25) },
+                            .alpha(if (quickModesEnabled) 1f else 0.45f)
+                            .clickable(enabled = quickModesEnabled) {
+                                pendingQuickTimerMode = Pair(SessionMode.POMODORO, 25)
+                            },
                         shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surface,
                         shadowElevation = 1.dp
@@ -417,7 +429,10 @@ fun DashboardScreen(
                             .height(105.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                            .clickable { pendingQuickTimerMode = Pair(SessionMode.STOPWATCH, 0) },
+                            .alpha(if (quickModesEnabled) 1f else 0.45f)
+                            .clickable(enabled = quickModesEnabled) {
+                                pendingQuickTimerMode = Pair(SessionMode.STOPWATCH, 0)
+                            },
                         shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surface,
                         shadowElevation = 1.dp
@@ -932,7 +947,7 @@ fun DashboardScreen(
         )
     }
 
-    pendingQuickTimerMode?.let { (mode, defaultMins) ->
+    pendingQuickTimerMode?.takeIf { quickModesEnabled }?.let { (mode, defaultMins) ->
         val subjectNames = remember(subjects) {
             val list = mutableListOf<String>()
             subjects.forEach { if (!list.contains(it.name) && it.name != "General Study") list.add(it.name) }
@@ -1191,7 +1206,7 @@ fun ExamMilestoneCountdownSection(
                     onStartTimer = { onStartTimer(target) },
                     onEdit = { onEditTarget(target) },
                     onDelete = { onDeleteTarget(target.id) },
-                    defaultExpanded = examTargets.size == 1
+                    defaultExpanded = false
                 )
             }
         }

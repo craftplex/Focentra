@@ -126,6 +126,75 @@ class StatisticsEngineTest {
     }
 
     @Test
+    fun thisWeekStartsOnMondayEvenWhenTheCurrentDayIsSunday() {
+        val originalTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            val now = dateMillis(2026, Calendar.NOVEMBER, 8, 12, 0)
+            val previousMonday = dateMillis(2026, Calendar.OCTOBER, 26, 10, 0)
+            val previousSunday = dateMillis(2026, Calendar.NOVEMBER, 1, 23, 0)
+            val thisMonday = dateMillis(2026, Calendar.NOVEMBER, 2, 0, 0)
+            val thisSunday = dateMillis(2026, Calendar.NOVEMBER, 8, 10, 0)
+
+            val thisWeek = StatisticsEngine.filterSessionsByPeriod(
+                listOf(
+                    session(previousMonday, 30 * 60L),
+                    session(previousSunday, 40 * 60L),
+                    session(thisMonday, 50 * 60L),
+                    session(thisSunday, 60 * 60L)
+                ),
+                TimePeriod.THIS_WEEK,
+                now
+            )
+            val chartData = StatisticsEngine.buildChartItems(thisWeek, TimePeriod.THIS_WEEK, 480f)
+
+            assertEquals(2, thisWeek.size)
+            assertEquals(7, chartData.size)
+            assertEquals(50f, chartData[0].studyMinutes, 0.01f)
+            assertEquals(60f, chartData[6].studyMinutes, 0.01f)
+        } finally {
+            TimeZone.setDefault(originalTimeZone)
+        }
+    }
+
+    @Test
+    fun lastWeekEndsExclusivelyAtThisWeeksMonday() {
+        val originalTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            val now = dateMillis(2026, Calendar.NOVEMBER, 8, 12, 0)
+            val lastMonday = dateMillis(2026, Calendar.OCTOBER, 26, 0, 0)
+            val lastSunday = dateMillis(2026, Calendar.NOVEMBER, 1, 23, 0)
+            val thisMonday = dateMillis(2026, Calendar.NOVEMBER, 2, 0, 0)
+
+            val lastWeek = StatisticsEngine.filterSessionsByPeriod(
+                listOf(
+                    session(lastMonday, 30 * 60L),
+                    session(lastSunday, 40 * 60L),
+                    session(thisMonday, 50 * 60L)
+                ),
+                TimePeriod.LAST_WEEK,
+                now
+            )
+            val chartData = StatisticsEngine.buildChartItems(lastWeek, TimePeriod.LAST_WEEK, 480f)
+
+            assertEquals(2, lastWeek.size)
+            assertEquals(30f, chartData[0].studyMinutes, 0.01f)
+            assertEquals(40f, chartData[6].studyMinutes, 0.01f)
+        } finally {
+            TimeZone.setDefault(originalTimeZone)
+        }
+    }
+
+    @Test
+    fun emptyWeeklyPeriodStillProvidesSevenTrendBuckets() {
+        val stats = StatisticsEngine.calculatePeriodStats(emptyList(), TimePeriod.THIS_WEEK)
+
+        assertEquals(listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"), stats.chartData.map { it.label })
+        assertEquals(listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f), stats.chartData.map { it.studyMinutes })
+    }
+
+    @Test
     fun yesterdayTrendIncludesYesterdaySessionsInTheCorrectTimeBucket() {
         val yesterdayAtNoon = Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, -1)
@@ -155,9 +224,9 @@ class StatisticsEngineTest {
         subject = "Study"
     )
 
-    private fun dateMillis(year: Int, month: Int, day: Int): Long =
+    private fun dateMillis(year: Int, month: Int, day: Int, hour: Int = 12, minute: Int = 0): Long =
         Calendar.getInstance().apply {
             clear()
-            set(year, month, day, 12, 0, 0)
+            set(year, month, day, hour, minute)
         }.timeInMillis
 }

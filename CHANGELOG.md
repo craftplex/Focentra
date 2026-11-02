@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.5] - 2026-11-02
+
+- **Study Timer UI**: Reduce the full-screen accent tint to keep timer colors balanced and improve readability.
+- **Quick Study Modes**: Disable and visually dim the dashboard shortcuts while a timer is running or paused.
+- **Exam Milestones**: Keep milestone cards collapsed by default.
+- **Revision Notifications**: Open revision reminders directly in Revision Hub and give each notification its own navigation intent.
+- **Study Trend Graphs**: Calculate Monday-based week boundaries independent of locale, retain the seven weekly buckets when there is no activity, and render the zero-activity trend instead of hiding the graph.
+- **Version Bump**: Updated `versionCode` to `69` and `versionName` to `8.0.5`.
+
 ## [8.0.4] - 2026-11-01
 
 - **Study Trend Graph**: Corrected the Yesterday date range and hardened previous-week boundary calculation so matching study sessions populate the trend.

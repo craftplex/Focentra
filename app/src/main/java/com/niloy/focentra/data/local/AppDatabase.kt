@@ -122,6 +122,14 @@ abstract class AppDatabase : RoomDatabase() {
                           AND s.`topic` = 'Previously studied'
                           AND LOWER(TRIM(s.`subject`)) = LOWER(TRIM(`chapters`.`subjectName`))
                           AND LOWER(TRIM(s.`selectedChapter`)) = LOWER(TRIM(`chapters`.`chapterName`))
+                          AND `chapters`.`id` = (
+                              SELECT c.`id`
+                              FROM `chapters` c
+                              WHERE LOWER(TRIM(c.`subjectName`)) = LOWER(TRIM(s.`subject`))
+                                AND LOWER(TRIM(c.`chapterName`)) = LOWER(TRIM(s.`selectedChapter`))
+                              ORDER BY c.`orderIndex`, c.`id`
+                              LIMIT 1
+                          )
                     ), 0)
                     WHERE EXISTS (
                         SELECT 1
@@ -130,6 +138,14 @@ abstract class AppDatabase : RoomDatabase() {
                           AND s.`topic` = 'Previously studied'
                           AND LOWER(TRIM(s.`subject`)) = LOWER(TRIM(`chapters`.`subjectName`))
                           AND LOWER(TRIM(s.`selectedChapter`)) = LOWER(TRIM(`chapters`.`chapterName`))
+                          AND `chapters`.`id` = (
+                              SELECT c.`id`
+                              FROM `chapters` c
+                              WHERE LOWER(TRIM(c.`subjectName`)) = LOWER(TRIM(s.`subject`))
+                                AND LOWER(TRIM(c.`chapterName`)) = LOWER(TRIM(s.`selectedChapter`))
+                              ORDER BY c.`orderIndex`, c.`id`
+                              LIMIT 1
+                          )
                     )
                     """.trimIndent()
                 )

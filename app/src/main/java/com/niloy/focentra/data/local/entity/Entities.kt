@@ -156,7 +156,8 @@ data class ChapterEntity(
     val completedClassesCount: Int = 0,
     val isRevision1Completed: Boolean = false,
     val isRevision2Completed: Boolean = false,
-    val orderIndex: Int = 0
+    val orderIndex: Int = 0,
+    val historicalStudySeconds: Long = 0L
 )
 
 @Entity(

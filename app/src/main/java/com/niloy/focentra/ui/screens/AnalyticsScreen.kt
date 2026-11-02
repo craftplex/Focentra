@@ -571,12 +571,10 @@ fun AnalyticsScreen(
             chapterName = chapterName,
             onDismiss = { chapterForTimeEntry = null },
             onAdd = { durationMinutes ->
-                viewModel.addManualSession(
-                    subject = subjectName,
-                    chapter = chapterName,
-                    topic = "Previously studied",
-                    durationMinutes = durationMinutes,
-                    category = "Study"
+                viewModel.addHistoricalChapterStudyTime(
+                    subjectName = subjectName,
+                    chapterName = chapterName,
+                    durationMinutes = durationMinutes
                 )
                 chapterForTimeEntry = null
             }

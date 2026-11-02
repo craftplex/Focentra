@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.8] - 2026-11-02
+
+- **Earlier Chapter Study Time**: Store added previous study time as chapter-level historical data instead of a session dated today, so it increases chapter totals and subject study-hour progress without inflating daily focus statistics.
+- **Existing Entry Correction**: Migrate prior "Previously studied" manual sessions into chapter-level historical totals and remove their misleading daily session records.
+- **Backup Compatibility**: Include chapter historical study totals in JSON backup export and restore.
+- **Database Migration**: Upgrade Room database to version 9 while preserving existing study data.
+- **Version Bump**: Updated `versionCode` to `72` and `versionName` to `8.0.8`.
+
 ## [8.0.7] - 2026-11-02
 
 - **Focus Now History**: Save Focus Now stopwatch sessions directly to History when they finish, and add optional topic and session-goal fields.

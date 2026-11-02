@@ -102,12 +102,20 @@ fun SubjectsScreen(
     var topicToDelete by remember { mutableStateOf<TopicEntity?>(null) }
 
     // safer aggregation: normalize subject name, avoid duplicate-key collisions
-    val studyMinsBySubject = remember(sessions) {
-        sessions
+    val studyMinsBySubject = remember(sessions, chapters) {
+        val actualStudyMinutes = sessions
             .groupBy { it.subject.trim() }
             .mapValues { entry ->
                 entry.value.sumOf { it.actualFocusedSeconds } / 60L
             }
+        val historicalStudyMinutes = chapters
+            .groupBy { it.subjectName.trim() }
+            .mapValues { entry ->
+                entry.value.sumOf { it.historicalStudySeconds.coerceAtLeast(0L) } / 60L
+            }
+        (actualStudyMinutes.keys + historicalStudyMinutes.keys).associateWith { subjectName ->
+            (actualStudyMinutes[subjectName] ?: 0L) + (historicalStudyMinutes[subjectName] ?: 0L)
+        }
     }
 
     if (showCreateDialog) {

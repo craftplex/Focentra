@@ -150,7 +150,13 @@ class StatisticsEngineTest {
     @Test
     fun chapterStudyTotalsUseSelectedChapterAndKeepSubMinuteSessions() {
         val chapters = listOf(
-            ChapterEntity(id = 1, subjectId = 1, subjectName = "Physics", chapterName = "Vectors"),
+            ChapterEntity(
+                id = 1,
+                subjectId = 1,
+                subjectName = "Physics",
+                chapterName = "Vectors",
+                historicalStudySeconds = 120L
+            ),
             ChapterEntity(id = 2, subjectId = 1, subjectName = "Physics", chapterName = "Motion")
         )
         val sessions = listOf(
@@ -160,9 +166,25 @@ class StatisticsEngineTest {
         )
 
         assertEquals(
-            mapOf(1L to 75L, 2L to 60L),
+            mapOf(1L to 195L, 2L to 60L),
             StatisticsEngine.buildChapterStudyTotalsSeconds(sessions, chapters)
         )
+    }
+
+    @Test
+    fun historicalChapterTimeDoesNotContributeToTodayStats() {
+        val chapters = listOf(
+            ChapterEntity(
+                id = 1,
+                subjectId = 1,
+                subjectName = "Physics",
+                chapterName = "Vectors",
+                historicalStudySeconds = 3_600L
+            )
+        )
+
+        assertEquals(3_600L, StatisticsEngine.buildChapterStudyTotalsSeconds(emptyList(), chapters)[1L])
+        assertEquals(0L, StatisticsEngine.calculatePeriodStats(emptyList(), TimePeriod.TODAY).totalFocusedSeconds)
     }
 
     @Test

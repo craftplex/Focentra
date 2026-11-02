@@ -9,15 +9,15 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to publish (for example, v8.0.7)'
+        description: 'Release tag to publish (for example, v8.0.8)'
         required: false
-        default: 'v8.0.7'
+        default: 'v8.0.8'
 
 permissions:
   contents: write
 
 env:
-  APP_VERSION: v8.0.7
+  APP_VERSION: v8.0.8
 
 jobs:
   build:

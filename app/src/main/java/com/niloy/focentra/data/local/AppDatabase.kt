@@ -36,7 +36,7 @@ data class SyllabusData(
         NotificationEntity::class,
         RevisionSkipEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -109,6 +109,62 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `chapters` ADD COLUMN `historicalStudySeconds` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    """
+                    UPDATE `chapters`
+                    SET `historicalStudySeconds` = `historicalStudySeconds` + COALESCE((
+                        SELECT SUM(s.`actualFocusedSeconds`)
+                        FROM `study_sessions` s
+                        WHERE s.`sessionType` = 'MANUAL'
+                          AND s.`topic` = 'Previously studied'
+                          AND LOWER(TRIM(s.`subject`)) = LOWER(TRIM(`chapters`.`subjectName`))
+                          AND LOWER(TRIM(s.`selectedChapter`)) = LOWER(TRIM(`chapters`.`chapterName`))
+                          AND `chapters`.`id` = (
+                              SELECT c.`id`
+                              FROM `chapters` c
+                              WHERE LOWER(TRIM(c.`subjectName`)) = LOWER(TRIM(s.`subject`))
+                                AND LOWER(TRIM(c.`chapterName`)) = LOWER(TRIM(s.`selectedChapter`))
+                              ORDER BY c.`orderIndex`, c.`id`
+                              LIMIT 1
+                          )
+                    ), 0)
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM `study_sessions` s
+                        WHERE s.`sessionType` = 'MANUAL'
+                          AND s.`topic` = 'Previously studied'
+                          AND LOWER(TRIM(s.`subject`)) = LOWER(TRIM(`chapters`.`subjectName`))
+                          AND LOWER(TRIM(s.`selectedChapter`)) = LOWER(TRIM(`chapters`.`chapterName`))
+                          AND `chapters`.`id` = (
+                              SELECT c.`id`
+                              FROM `chapters` c
+                              WHERE LOWER(TRIM(c.`subjectName`)) = LOWER(TRIM(s.`subject`))
+                                AND LOWER(TRIM(c.`chapterName`)) = LOWER(TRIM(s.`selectedChapter`))
+                              ORDER BY c.`orderIndex`, c.`id`
+                              LIMIT 1
+                          )
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    DELETE FROM `study_sessions`
+                    WHERE `sessionType` = 'MANUAL'
+                      AND `topic` = 'Previously studied'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM `chapters` c
+                          WHERE LOWER(TRIM(c.`subjectName`)) = LOWER(TRIM(`study_sessions`.`subject`))
+                            AND LOWER(TRIM(c.`chapterName`)) = LOWER(TRIM(`study_sessions`.`selectedChapter`))
+                      )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: Context, scope: CoroutineScope = CoroutineScope(Dispatchers.IO)): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -116,7 +172,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "focentra_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .fallbackToDestructiveMigration()
                     .addCallback(DatabaseCallback(scope))
                     .build()

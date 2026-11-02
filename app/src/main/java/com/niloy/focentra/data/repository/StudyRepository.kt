@@ -853,6 +853,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
             obj.put("isRevision1Completed", chapter.isRevision1Completed)
             obj.put("isRevision2Completed", chapter.isRevision2Completed)
             obj.put("orderIndex", chapter.orderIndex)
+            obj.put("historicalStudySeconds", chapter.historicalStudySeconds)
             chaptersArray.put(obj)
         }
         root.put("chapters", chaptersArray)
@@ -992,6 +993,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                 jWriter.name("isRevision1Completed").value(chapter.isRevision1Completed)
                 jWriter.name("isRevision2Completed").value(chapter.isRevision2Completed)
                 jWriter.name("orderIndex").value(chapter.orderIndex)
+                jWriter.name("historicalStudySeconds").value(chapter.historicalStudySeconds)
                 jWriter.endObject()
             }
             jWriter.endArray()
@@ -1306,7 +1308,11 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                             completedClassesCount = obj.optInt("completedClassesCount", 0),
                             isRevision1Completed = obj.optBoolean("isRevision1Completed", false),
                             isRevision2Completed = obj.optBoolean("isRevision2Completed", false),
-                            orderIndex = obj.optInt("orderIndex", 0)
+                            orderIndex = obj.optInt("orderIndex", 0),
+                            historicalStudySeconds = obj.optLong(
+                                "historicalStudySeconds",
+                                existing?.historicalStudySeconds ?: 0L
+                            ).coerceAtLeast(0L)
                         )
                         if (existing == null) {
                             database.chapterDao().insertChapter(chapter)

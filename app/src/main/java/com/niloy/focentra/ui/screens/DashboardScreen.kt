@@ -883,14 +883,16 @@ fun DashboardScreen(
                 showFocusNowDialog = false
                 focusNowTarget = null
             },
-            onStart = { subj, chap, targetId ->
+            onStart = { subj, chap, topic, sessionGoal, targetId ->
                 showFocusNowDialog = false
                 viewModel.startTimerSession(
                     mode = SessionMode.STOPWATCH,
                     subject = subj,
                     chapter = chap,
-                    goal = focusNowTarget?.title ?: "",
+                    topic = topic,
+                    goal = sessionGoal,
                     targetId = targetId,
+                    autoSaveOnFinish = true,
                     destination = NavigationTab.TIMER
                 )
                 focusNowTarget = null

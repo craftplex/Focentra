@@ -7,7 +7,7 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
-val releaseKeystorePath = System.getenv("KEYSTORE_PATH")
+val releaseKeystorePath = System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
 val releaseStorePassword = System.getenv("STORE_PASSWORD")
 val releaseKeyAlias = System.getenv("KEY_ALIAS")
 val releaseKeyPassword = System.getenv("KEY_PASSWORD")

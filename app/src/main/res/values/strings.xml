@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Focentra</string>
     <string name="perm_read_sessions_label">Read study session history</string>
-    <string name="perm_read_sessions_desc">Allows Daynexa and authorized integrations to read completed study sessions when user consent is enabled in Settings.</string>
+    <string name="perm_read_sessions_desc">Allows apps signed with Focentra's signing certificate to read completed study sessions when user consent is enabled in Settings.</string>
 </resources>

@@ -3,6 +3,7 @@ package com.niloy.focentra
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PermissionInfo
 import androidx.test.core.app.ApplicationProvider
 import com.niloy.focentra.data.local.AppDatabase
 import com.niloy.focentra.data.local.entity.SettingEntity
@@ -69,6 +70,19 @@ class DaynexaSessionsProviderTest {
         } catch (e: UnsupportedOperationException) {
             assertTrue(e.message?.contains("READ-ONLY") == true)
         }
+    }
+
+    @Test
+    fun sessionReadPermissionRequiresTheFocentraSigningCertificate() {
+        val permission = context.packageManager.getPermissionInfo(
+            DaynexaContract.PERMISSION_READ_SESSIONS,
+            0
+        )
+
+        assertEquals(
+            PermissionInfo.PROTECTION_SIGNATURE,
+            permission.protectionLevel and PermissionInfo.PROTECTION_MASK_BASE
+        )
     }
 
     @Test

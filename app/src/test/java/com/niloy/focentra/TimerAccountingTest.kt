@@ -2,7 +2,9 @@ package com.niloy.focentra
 
 import com.niloy.focentra.engine.PomodoroPhase
 import com.niloy.focentra.engine.PomodoroSessionTotals
+import com.niloy.focentra.engine.TimerStatus
 import com.niloy.focentra.engine.pomodoroPauseStartedAt
+import com.niloy.focentra.engine.timerTimeSnapshot
 import com.niloy.focentra.data.local.entity.ChapterEntity
 import com.niloy.focentra.data.local.entity.StudySessionEntity
 import com.niloy.focentra.viewmodel.chapterAfterRevision
@@ -43,6 +45,45 @@ class TimerAccountingTest {
     fun manuallyStartedPomodoroPhasesStartPauseTimingAtTheTransition() {
         assertEquals(123_456L, pomodoroPauseStartedAt(autoStart = false, nowMillis = 123_456L))
         assertEquals(0L, pomodoroPauseStartedAt(autoStart = true, nowMillis = 123_456L))
+    }
+
+    @Test
+    fun pauseAndResumeDoNotCountPausedTimeAsFocusedTime() {
+        val paused = timerTimeSnapshot(
+            status = TimerStatus.PAUSED,
+            priorFocusedSeconds = 20,
+            runningSegmentStartMs = 0,
+            priorPausedSeconds = 0,
+            pauseSegmentStartMs = 20_000,
+            nowMillis = 50_000
+        )
+        val resumed = timerTimeSnapshot(
+            status = TimerStatus.RUNNING,
+            priorFocusedSeconds = paused.focusedSeconds,
+            runningSegmentStartMs = 50_000,
+            priorPausedSeconds = paused.pausedSeconds,
+            pauseSegmentStartMs = 0,
+            nowMillis = 75_000
+        )
+
+        assertEquals(20L, paused.focusedSeconds)
+        assertEquals(30L, paused.pausedSeconds)
+        assertEquals(45L, resumed.focusedSeconds)
+        assertEquals(30L, resumed.pausedSeconds)
+    }
+
+    @Test
+    fun timerUsesElapsedClockTimeAfterLongBackgroundOrScreenOffPeriod() {
+        val snapshot = timerTimeSnapshot(
+            status = TimerStatus.RUNNING,
+            priorFocusedSeconds = 120,
+            runningSegmentStartMs = 1_000,
+            priorPausedSeconds = 0,
+            pauseSegmentStartMs = 0,
+            nowMillis = 3_601_000
+        )
+
+        assertEquals(3_720L, snapshot.focusedSeconds)
     }
 
     @Test

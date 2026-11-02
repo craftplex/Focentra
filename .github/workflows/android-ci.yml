@@ -55,7 +55,25 @@ jobs:
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Build Debug APK
+      - name: Verify release signing fails closed without credentials
+        env:
+          KEYSTORE_PATH: ''
+          STORE_PASSWORD: ''
+          KEY_PASSWORD: ''
+          KEY_ALIAS: ''
+        run: |
+          if ./gradlew validateReleaseSigning --no-daemon --stacktrace > signing-validation.log 2>&1; then
+            echo "::error::Release signing validation unexpectedly passed without credentials."
+            exit 1
+          fi
+          if ! grep -q "Release signing is not configured" signing-validation.log; then
+            cat signing-validation.log
+            echo "::error::Release signing validation failed for an unexpected reason."
+            exit 1
+          fi
+          echo "Release signing correctly rejected missing credentials."
+
+      - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload Debug APK Artifact

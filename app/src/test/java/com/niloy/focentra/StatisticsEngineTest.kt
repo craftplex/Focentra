@@ -33,6 +33,50 @@ class StatisticsEngineTest {
     }
 
     @Test
+    fun todayTotalsIncludeMultipleSessionsAndExcludeYesterday() {
+        val todayNoon = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val yesterdayNoon = todayNoon - 24 * 60 * 60 * 1000L
+
+        val stats = StatisticsEngine.calculatePeriodStats(
+            listOf(
+                session(todayNoon, 1_200L),
+                session(todayNoon + 60_000L, 1_800L),
+                session(yesterdayNoon, 3_600L)
+            ),
+            TimePeriod.TODAY
+        )
+
+        assertEquals(3_000L, stats.totalFocusedSeconds)
+        assertEquals(2, stats.sessionCount)
+    }
+
+    @Test
+    fun thisMonthIncludesTheFirstDayAndExcludesThePreviousMonth() {
+        val firstOfThisMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val stats = StatisticsEngine.calculatePeriodStats(
+            listOf(
+                session(firstOfThisMonth.timeInMillis, 600L),
+                session(firstOfThisMonth.timeInMillis - 1_000L, 1_200L)
+            ),
+            TimePeriod.THIS_MONTH
+        )
+
+        assertEquals(600L, stats.totalFocusedSeconds)
+        assertEquals(1, stats.sessionCount)
+    }
+
+    @Test
     fun weeklyPersonalRecordSumsSessionsAcrossTheWeek() {
         val calendar = Calendar.getInstance().apply {
             clear()

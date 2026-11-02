@@ -34,18 +34,20 @@ class StatisticsEngineTest {
 
     @Test
     fun todayTotalsIncludeMultipleSessionsAndExcludeYesterday() {
-        val todayNoon = Calendar.getInstance().apply {
+        val now = System.currentTimeMillis()
+        val yesterdayNoon = Calendar.getInstance().apply {
+            timeInMillis = now
+            add(Calendar.DAY_OF_YEAR, -1)
             set(Calendar.HOUR_OF_DAY, 12)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
-        val yesterdayNoon = todayNoon - 24 * 60 * 60 * 1000L
 
         val stats = StatisticsEngine.calculatePeriodStats(
             listOf(
-                session(todayNoon, 1_200L),
-                session(todayNoon + 60_000L, 1_800L),
+                session(now - 120_000L, 1_200L),
+                session(now - 60_000L, 1_800L),
                 session(yesterdayNoon, 3_600L)
             ),
             TimePeriod.TODAY

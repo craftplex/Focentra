@@ -81,7 +81,7 @@ class DaynexaSessionsProviderTest {
 
         assertEquals(
             PermissionInfo.PROTECTION_SIGNATURE,
-            permission.protectionLevel and PermissionInfo.PROTECTION_MASK_BASE
+            permission.protection
         )
     }
 

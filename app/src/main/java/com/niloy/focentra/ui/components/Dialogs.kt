@@ -165,12 +165,14 @@ fun FocusNowStartDialog(
     chapters: List<com.niloy.focentra.data.local.entity.ChapterEntity>,
     target: com.niloy.focentra.viewmodel.ExamTarget? = null,
     onDismiss: () -> Unit,
-    onStart: (subject: String, chapter: String, targetId: String) -> Unit
+    onStart: (subject: String, chapter: String, topic: String, goal: String, targetId: String) -> Unit
 ) {
     var selectedSubject by remember {
         mutableStateOf(subjects.firstOrNull()?.name ?: "")
     }
     var selectedChapter by remember { mutableStateOf("") }
+    var topic by remember { mutableStateOf("") }
+    var sessionGoal by remember(target?.id) { mutableStateOf(target?.title.orEmpty()) }
     var showWarning by remember { mutableStateOf(false) }
 
     val matchingChapters = remember(chapters, selectedSubject) {
@@ -363,6 +365,24 @@ fun FocusNowStartDialog(
                         }
                     }
 
+                    OutlinedTextField(
+                        value = topic,
+                        onValueChange = { topic = it },
+                        label = { Text("Topic (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = sessionGoal,
+                        onValueChange = { sessionGoal = it },
+                        label = { Text("Session Goal (optional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+
                     if (showWarning) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
@@ -392,7 +412,7 @@ fun FocusNowStartDialog(
                                 if (selectedSubject.isBlank() || selectedChapter.isBlank()) {
                                     showWarning = true
                                 } else {
-                                    onStart(selectedSubject, selectedChapter, target?.id ?: "")
+                                    onStart(selectedSubject, selectedChapter, topic.trim(), sessionGoal.trim(), target?.id ?: "")
                                 }
                             },
                             shape = RoundedCornerShape(12.dp)
@@ -904,11 +924,13 @@ fun SessionCompletionDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 fun ManualStudyDataDialog(
     subjects: List<String>,
+    chapters: List<com.niloy.focentra.data.local.entity.ChapterEntity> = emptyList(),
     examTargets: List<com.niloy.focentra.viewmodel.ExamTarget> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (
         subject: String,
         topic: String,
+        chapter: String,
         durationMinutes: Int,
         category: String,
         notes: String,
@@ -921,6 +943,11 @@ fun ManualStudyDataDialog(
     var customSubject by remember { mutableStateOf("") }
     var useCustomSubject by remember { mutableStateOf(subjects.isEmpty()) }
     var topic by remember { mutableStateOf("") }
+    var selectedChapter by remember { mutableStateOf("") }
+    val effectiveSubject = if (useCustomSubject) customSubject else subject
+    val matchingChapters = remember(chapters, effectiveSubject) {
+        chapters.filter { it.subjectName.equals(effectiveSubject, ignoreCase = true) }
+    }
     var sessionTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var durationMinutesStr by remember { mutableStateOf("30") }
@@ -979,7 +1006,10 @@ fun ManualStudyDataDialog(
                             val sub = subjects[idx]
                             FilterChip(
                                 selected = subject == sub,
-                                onClick = { subject = sub },
+                                onClick = {
+                                    subject = sub
+                                    selectedChapter = ""
+                                },
                                 label = { Text(sub, maxLines = 1) }
                             )
                         }
@@ -1013,6 +1043,29 @@ fun ManualStudyDataDialog(
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true
                 )
+
+                if (matchingChapters.isNotEmpty()) {
+                    Text(
+                        text = "Chapter (optional)",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    androidx.compose.foundation.lazy.LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(matchingChapters.size) { index ->
+                            val chapter = matchingChapters[index].chapterName
+                            FilterChip(
+                                selected = selectedChapter == chapter,
+                                onClick = {
+                                    selectedChapter = if (selectedChapter == chapter) "" else chapter
+                                },
+                                label = { Text(chapter, maxLines = 1) }
+                            )
+                        }
+                    }
+                }
 
                 OutlinedButton(
                     onClick = { showDatePicker = true },
@@ -1126,6 +1179,7 @@ fun ManualStudyDataDialog(
                         onSave(
                             finalSubject,
                             topic,
+                            selectedChapter,
                             durMin,
                             category,
                             notes,

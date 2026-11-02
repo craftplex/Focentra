@@ -332,8 +332,8 @@ object StatisticsEngine {
 
         fun setStartOfWeek(calendar: Calendar) {
             setStartOfDay(calendar)
-            val daysSinceMonday = (calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7
-            calendar.add(Calendar.DAY_OF_YEAR, -daysSinceMonday)
+            val daysSinceSunday = calendar.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY
+            calendar.add(Calendar.DAY_OF_YEAR, -daysSinceSunday)
         }
 
         when (period) {
@@ -406,14 +406,13 @@ object StatisticsEngine {
                 }
             }
             TimePeriod.THIS_WEEK, TimePeriod.LAST_WEEK -> {
-                // 7 days (Mon to Sun)
+                // 7 days (Sun to Sat)
                 val dayMins = FloatArray(7) { 0f }
-                val dayLabels = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+                val dayLabels = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
                 sessions.forEach { s ->
                     cal.timeInMillis = s.startTime
                     val d = cal.get(Calendar.DAY_OF_WEEK)
-                    // Convert Calendar.DAY_OF_WEEK (1=Sun, 2=Mon ... 7=Sat) to index (0=Mon ... 6=Sun)
-                    val idx = if (d == Calendar.SUNDAY) 6 else d - 2
+                    val idx = d - Calendar.SUNDAY
                     if (idx in 0..6) {
                         dayMins[idx] += (s.actualFocusedSeconds / 60f)
                     }
@@ -480,9 +479,9 @@ object StatisticsEngine {
 
         val cells = mutableListOf<HeatmapCell>()
         val startCal = Calendar.getInstance()
-        // Align to start of week (Sunday or Monday)
+        // Keep heatmap columns aligned to Sunday-start weekly charts.
         startCal.add(Calendar.WEEK_OF_YEAR, -weeksBack)
-        startCal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+        startCal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
         startCal.set(Calendar.HOUR_OF_DAY, 0)
         startCal.set(Calendar.MINUTE, 0)
         startCal.set(Calendar.SECOND, 0)
@@ -547,7 +546,7 @@ object StatisticsEngine {
             val k = String.format("%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH))
             dayMap[k] = (dayMap[k] ?: 0L) + s.actualFocusedSeconds
 
-            cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+            cal.set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
             cal.set(Calendar.HOUR_OF_DAY, 0)
             cal.set(Calendar.MINUTE, 0)
             cal.set(Calendar.SECOND, 0)

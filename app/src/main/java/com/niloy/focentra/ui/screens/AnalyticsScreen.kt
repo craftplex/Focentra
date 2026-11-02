@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -18,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +44,7 @@ fun AnalyticsScreen(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
+    var chapterForTimeEntry by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val totalHrs = periodStats.totalFocusedSeconds / 3600
     val totalMins = (periodStats.totalFocusedSeconds % 3600) / 60
@@ -337,7 +340,10 @@ fun AnalyticsScreen(
             ChapterStudyReportSection(
                 sessions = sessions,
                 chapters = chapters,
-                subjects = subjects
+                subjects = subjects,
+                onChapterLongClick = { subjectName, chapterName ->
+                    chapterForTimeEntry = subjectName to chapterName
+                }
             )
         }
 
@@ -403,6 +409,7 @@ fun AnalyticsScreen(
                             Text("${personalRecords.totalAllTimeMinutes / 60}h ${personalRecords.totalAllTimeMinutes % 60}m", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
                         }
                     }
+
                 }
             }
         }
@@ -443,6 +450,7 @@ fun AnalyticsScreen(
                             )
                         }
                     }
+
                 }
             }
         }
@@ -556,13 +564,73 @@ fun AnalyticsScreen(
             }
         }
     }
+
+    chapterForTimeEntry?.let { (subjectName, chapterName) ->
+        AddChapterStudyTimeDialog(
+            subjectName = subjectName,
+            chapterName = chapterName,
+            onDismiss = { chapterForTimeEntry = null },
+            onAdd = { durationMinutes ->
+                viewModel.addManualSession(
+                    subject = subjectName,
+                    chapter = chapterName,
+                    topic = "Previously studied",
+                    durationMinutes = durationMinutes,
+                    category = "Study"
+                )
+                chapterForTimeEntry = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun AddChapterStudyTimeDialog(
+    subjectName: String,
+    chapterName: String,
+    onDismiss: () -> Unit,
+    onAdd: (Int) -> Unit
+) {
+    var minutesText by remember(subjectName, chapterName) { mutableStateOf("60") }
+    val minutes = minutesText.toIntOrNull()?.takeIf { it > 0 }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Earlier Study Time") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "$subjectName - $chapterName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = minutesText,
+                    onValueChange = { minutesText = it.filter(Char::isDigit) },
+                    label = { Text("Minutes studied earlier") },
+                    suffix = { Text("min") },
+                    singleLine = true,
+                    isError = minutes == null
+                )
+            }
+        },
+        confirmButton = {
+            Button(enabled = minutes != null, onClick = { minutes?.let(onAdd) }) {
+                Text("Add Time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
 fun ChapterStudyReportSection(
     sessions: List<com.niloy.focentra.data.local.entity.StudySessionEntity>,
     chapters: List<com.niloy.focentra.data.local.entity.ChapterEntity>,
-    subjects: List<com.niloy.focentra.data.local.entity.SubjectEntity>
+    subjects: List<com.niloy.focentra.data.local.entity.SubjectEntity>,
+    onChapterLongClick: (subjectName: String, chapterName: String) -> Unit = { _, _ -> }
 ) {
     val expandedSubjects = remember { mutableStateMapOf<Long, Boolean>() }
 
@@ -625,6 +693,11 @@ fun ChapterStudyReportSection(
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
             } else {
+                Text(
+                    text = "Long-press a chapter to add earlier study time.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     subjects.forEach { subject ->
                         val subChapters = chapters.filter { it.subjectName.equals(subject.name, ignoreCase = true) }
@@ -699,7 +772,15 @@ fun ChapterStudyReportSection(
                                                 Surface(
                                                     shape = RoundedCornerShape(10.dp),
                                                     color = MaterialTheme.colorScheme.surface,
-                                                    modifier = Modifier.fillMaxWidth()
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .pointerInput(subject.name, ch.id) {
+                                                            detectTapGestures(
+                                                                onLongPress = {
+                                                                    onChapterLongClick(subject.name, ch.chapterName)
+                                                                }
+                                                            )
+                                                        }
                                                 ) {
                                                     Column(
                                                         modifier = Modifier.padding(10.dp),

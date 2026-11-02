@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.7] - 2026-11-02
+
+- **Focus Now History**: Save Focus Now stopwatch sessions directly to History when they finish, and add optional topic and session-goal fields.
+- **Manual Chapter Data**: Allow manual study entries to select a chapter for accurate chapter reporting.
+- **Earlier Chapter Time**: Add earlier study minutes to a chapter from Chapter Report; the entry also contributes to the subject's accumulated study time.
+- **Weekly Statistics**: Use Sunday-through-Saturday weeks and matching graph buckets so Sunday study appears in This Week on Monday.
+- **Subjects Screen**: Reduce subject-title typography and keep names on one line.
+- **Version Bump**: Updated `versionCode` to `71` and `versionName` to `8.0.7`.
+
 ## [8.0.6] - 2026-11-02
 
 - **Release Signing**: Fail release packaging when the configured keystore or credentials are missing; remove the publicly known signing fallback from Gradle and GitHub Actions.

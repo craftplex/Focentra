@@ -59,6 +59,7 @@ data class TimerUiState(
     val topic: String = "",
     val goal: String = "",
     val targetId: String = "",
+    val autoSaveOnFinish: Boolean = false,
     val tags: List<String> = emptyList(),
     val targetDurationSeconds: Long = 25 * 60L,
     val elapsedSeconds: Long = 0L,
@@ -176,6 +177,7 @@ class TimerEngine private constructor(
         topic: String = "",
         goal: String = "",
         targetId: String = "",
+        autoSaveOnFinish: Boolean = false,
         tags: List<String> = emptyList(),
         durationMinutes: Int = 25,
         pomodoroFocusMin: Int = 25,
@@ -212,6 +214,7 @@ class TimerEngine private constructor(
             topic = topic,
             goal = goal,
             targetId = targetId,
+            autoSaveOnFinish = autoSaveOnFinish,
             tags = tags,
             targetDurationSeconds = targetSec,
             remainingSeconds = targetSec,
@@ -313,6 +316,11 @@ class TimerEngine private constructor(
 
     fun finishSession(isEarly: Boolean = false) {
         if (_uiState.value.status != TimerStatus.RUNNING && _uiState.value.status != TimerStatus.PAUSED) {
+            return
+        }
+
+        if (_uiState.value.autoSaveOnFinish) {
+            finishAndSaveSessionDirectly(isEarly)
             return
         }
 

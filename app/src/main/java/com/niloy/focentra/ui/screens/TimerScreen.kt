@@ -358,12 +358,14 @@ fun TimerScreen(
     if (showManualDataInputDialog) {
         com.niloy.focentra.ui.components.ManualStudyDataDialog(
             subjects = subjects.map { it.name },
+            chapters = chapters,
             examTargets = examTargets,
             onDismiss = { showManualDataInputDialog = false },
-            onSave = { subject, topic, durMin, category, notes, rating, targetId, timestamp ->
+            onSave = { subject, topic, chapter, durMin, category, notes, rating, targetId, timestamp ->
                 viewModel.addManualSession(
                     subject = subject,
                     topic = topic,
+                    chapter = chapter,
                     durationMinutes = durMin,
                     category = category,
                     notes = notes,

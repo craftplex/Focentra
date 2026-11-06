@@ -240,8 +240,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     "20. Writing: Graph and Chart Interpretation & Analysis",
                     "21. Writing: Story Completing (Based on hints)",
                     "22. Writing: Informal Letters",
-                    "23. Writing: E-mail Writing",
-                    "24. Basic Grammer(ACS)"
+                    "23. Writing: E-mail Writing"
                 )
             ),
             SyllabusData(
@@ -262,7 +261,8 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     "9. Punctuation (Capitalization & Marks)",
                     "10. Formal Letters (Job Application with CV, Complaint, Inquiry)",
                     "11. Paragraph Writing 1: Listing, Definition, Descriptive",
-                    "12. Paragraph Writing 2: Comparison-Contrast /Cause-Effect"
+                    "12. Paragraph Writing 2: Comparison-Contrast /Cause-Effect",
+                    "13. Basic Grammer (ACS)"
                 )
             ),
             SyllabusData(

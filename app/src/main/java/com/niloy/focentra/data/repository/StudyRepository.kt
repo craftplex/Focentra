@@ -240,7 +240,8 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     "20. Writing: Graph and Chart Interpretation & Analysis",
                     "21. Writing: Story Completing (Based on hints)",
                     "22. Writing: Informal Letters",
-                    "23. Writing: E-mail Writing"
+                    "23. Writing: E-mail Writing",
+                    "24. Basic Grammer(ACS)"
                 )
             ),
             SyllabusData(
@@ -321,7 +322,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                 name = "রসায়ন ২য় পত্র",
                 colorHex = "#059669",
                 iconName = "Science",
-                targetHours = 30f,
+                targetHours = 100f,
                 description = "উচ্চমাধ্যমিক রসায়ন দ্বিতীয় পত্র সিলেবাস",
                 chapters = listOf(
                     "১. পরিবেশ রসায়ন",
@@ -335,7 +336,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                 name = "জীববিজ্ঞান ১ম পত্র (উদ্ভিদ)",
                 colorHex = "#22C55E",
                 iconName = "LocalFlorist",
-                targetHours = 30f,
+                targetHours = 100f,
                 description = "উচ্চমাধ্যমিক জীববিজ্ঞান প্রথম পত্র (উদ্ভিদবিজ্ঞান) সিলেবাস",
                 chapters = listOf(
                     "১. কোষ ও এর গঠন",

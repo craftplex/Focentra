@@ -554,6 +554,7 @@ class TimerEngine private constructor(
         val totalElapsed = currentFocused + priorPausedSeconds
 
         val currentState = _uiState.value
+        val previousRemaining = currentState.remainingSeconds
 
         when (currentState.mode) {
             SessionMode.COUNTDOWN -> {
@@ -605,6 +606,23 @@ class TimerEngine private constructor(
                 if (remaining <= 0L) {
                     handlePomodoroPhaseTransition()
                 }
+            }
+        }
+
+        // Periodically refresh notification text if minute changes or mode needs it
+        if (_uiState.value.status == TimerStatus.RUNNING) {
+            val shouldUpdateNotif = when (currentState.mode) {
+                SessionMode.COUNTDOWN, SessionMode.POMODORO -> {
+                    // Update notification contentText when minute rolls over
+                    (previousRemaining / 60) != (_uiState.value.remainingSeconds / 60)
+                }
+                SessionMode.STOPWATCH -> {
+                    // Update notification contentText when minute rolls over
+                    (currentFocused / 60) != ((currentFocused - 1) / 60)
+                }
+            }
+            if (shouldUpdateNotif) {
+                updateServiceState(TimerStatus.RUNNING)
             }
         }
     }

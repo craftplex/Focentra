@@ -213,13 +213,16 @@ fun FullScreenFocusScreen(
                 }
             }
 
+            val clockFontSize = if (timeString.length > 5) 54.sp else 68.sp
             Text(
                 text = timeString,
+                maxLines = 1,
+                softWrap = false,
                 style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 72.sp,
+                    fontSize = clockFontSize,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    letterSpacing = (-2).sp
+                    letterSpacing = (-1.5).sp
                 ),
                 color = if (isPaused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground
             )

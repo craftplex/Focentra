@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.niloy.focentra.MainActivity
 import com.niloy.focentra.engine.PomodoroPhase
@@ -232,6 +233,7 @@ class StudyTimerService : Service() {
         // Realtime Android Chronometer support
         if (!isPaused) {
             builder.setUsesChronometer(true)
+            builder.setShowWhen(true)
             if (modeStr == SessionMode.COUNTDOWN.name || modeStr == SessionMode.POMODORO.name) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     builder.setChronometerCountDown(true)
@@ -245,6 +247,7 @@ class StudyTimerService : Service() {
             }
         } else {
             builder.setUsesChronometer(false)
+            builder.setShowWhen(false)
         }
 
         return builder.build()

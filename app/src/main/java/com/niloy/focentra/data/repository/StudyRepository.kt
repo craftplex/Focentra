@@ -262,7 +262,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                     "10. Formal Letters (Job Application with CV, Complaint, Inquiry)",
                     "11. Paragraph Writing 1: Listing, Definition, Descriptive",
                     "12. Paragraph Writing 2: Comparison-Contrast /Cause-Effect",
-                    "13. Basic Grammer (ACS)"
+                    "13. Basic Grammar (ACS)"
                 )
             ),
             SyllabusData(
@@ -452,6 +452,30 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                             orderIndex = index
                         )
                     )
+                }
+            } else {
+                // If subject already exists, ensure all syllabus chapters exist and spelling is correct
+                val existingChapters = database.chapterDao().getChaptersForSubject(existing.id)
+                syllabus.chapters.forEachIndexed { index, title ->
+                    val matchingChapter = existingChapters.find {
+                        it.chapterName.trim().equals(title.trim(), ignoreCase = true) ||
+                            (title.contains("Basic Grammar (ACS)", ignoreCase = true) &&
+                                it.chapterName.contains("Basic Gramm", ignoreCase = true))
+                    }
+                    if (matchingChapter == null) {
+                        database.chapterDao().insertChapter(
+                            ChapterEntity(
+                                subjectId = existing.id,
+                                subjectName = existing.name,
+                                chapterName = title,
+                                tapCount = 0,
+                                status = "পড়া শুরু হয় নাই",
+                                orderIndex = index
+                            )
+                        )
+                    } else if (matchingChapter.chapterName != title) {
+                        database.chapterDao().updateChapter(matchingChapter.copy(chapterName = title))
+                    }
                 }
             }
         }

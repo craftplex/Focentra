@@ -246,6 +246,9 @@ interface ChapterDao {
     @Query("SELECT * FROM chapters WHERE subjectId = :subjectId ORDER BY orderIndex ASC, id ASC")
     fun getChaptersForSubjectFlow(subjectId: Long): Flow<List<ChapterEntity>>
 
+    @Query("SELECT * FROM chapters WHERE subjectId = :subjectId ORDER BY orderIndex ASC, id ASC")
+    suspend fun getChaptersForSubject(subjectId: Long): List<ChapterEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChapter(chapter: ChapterEntity): Long
 

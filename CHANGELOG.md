@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.9] - 2026-11-07
+
+- **Sequential Revision Hub Schedules**: Display all revision stages in the Revision Hub Scheduled tab with upcoming stages marked as 'Upcoming' until preceding stages are completed; dynamically calculate subsequent revision due dates from the completion time of earlier revisions instead of showing premature Overdue statuses.
+- **English 2nd Paper Syllabus Update**: Added `13. Basic Grammar (ACS)` to the English 2nd Paper syllabus with auto-migration so existing databases receive the new chapter seamlessly.
+- **Version Bump**: Updated `versionCode` to `73` and `versionName` to `8.0.9`.
+
 ## [8.0.8] - 2026-11-02
 
 - **Earlier Chapter Study Time**: Store added previous study time as chapter-level historical data instead of a session dated today, so it increases chapter totals and subject study-hour progress without inflating daily focus statistics.

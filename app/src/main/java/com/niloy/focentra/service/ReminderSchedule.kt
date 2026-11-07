@@ -32,14 +32,15 @@ internal data class RevisionStage(
     val id: String,
     val title: String,
     val displayName: String,
-    val daysAfterCompletion: Int
+    val daysAfterCompletion: Int,
+    val intervalDaysFromPrevious: Int = daysAfterCompletion
 )
 
 internal val revisionStages = listOf(
-    RevisionStage("1d", "1st Day Quick Recap Revision", "1st Day (Quick Recap)", 1),
-    RevisionStage("3d", "3rd Day Scientific Revision", "3rd Day (Detailed Review)", 3),
-    RevisionStage("7d", "7th Day Problem Solving Revision", "7th Day (Problem Solving)", 7),
-    RevisionStage("15d", "15th Day Final Revision Test", "15th Day (Final Master Test)", 15)
+    RevisionStage("1d", "1st Day Quick Recap Revision", "1st Day (Quick Recap)", 1, intervalDaysFromPrevious = 1),
+    RevisionStage("3d", "3rd Day Scientific Revision", "3rd Day (Detailed Review)", 3, intervalDaysFromPrevious = 3),
+    RevisionStage("7d", "7th Day Problem Solving Revision", "7th Day (Problem Solving)", 7, intervalDaysFromPrevious = 7),
+    RevisionStage("15d", "15th Day Final Revision Test", "15th Day (Final Master Test)", 15, intervalDaysFromPrevious = 15)
 )
 
 internal fun revisionDueAt(
@@ -48,8 +49,86 @@ internal fun revisionDueAt(
     timeZone: TimeZone = TimeZone.getDefault()
 ): Long = Calendar.getInstance(timeZone).apply {
     timeInMillis = completedAt
-    add(Calendar.DAY_OF_YEAR, stage.daysAfterCompletion)
+    add(Calendar.DAY_OF_YEAR, stage.intervalDaysFromPrevious)
 }.timeInMillis
+
+internal data class StageScheduleInfo(
+    val stage: RevisionStage,
+    val isCompleted: Boolean,
+    val dueDateMs: Long?,
+    val isUpcoming: Boolean
+)
+
+/**
+ * Calculates sequential revision schedule for a completed chapter given its revision history.
+ * - Stage 1 (1d): dueDate is chapter completion time + 1 day.
+ * - Stage 2 (3d): unlocked only when Stage 1 is completed. Due date is Stage 1 completion time + 3 days.
+ * - Stage 3 (7d): unlocked only when Stage 2 is completed. Due date is Stage 2 completion time + 7 days.
+ * - Stage 4 (15d): unlocked only when Stage 3 is completed. Due date is Stage 3 completion time + 15 days.
+ * If a stage's prerequisite stage is not yet completed, its dueDate is null and isUpcoming = true.
+ */
+internal fun calculateSequentialRevisionStages(
+    chapterCompletedAt: Long,
+    historyForChapter: List<com.niloy.focentra.viewmodel.RevisionRecord>,
+    timeZone: TimeZone = TimeZone.getDefault()
+): List<StageScheduleInfo> {
+    if (chapterCompletedAt <= 0L) return emptyList()
+
+    val result = mutableListOf<StageScheduleInfo>()
+    var previousStageCompletionTime: Long? = chapterCompletedAt
+
+    for (stage in revisionStages) {
+        val completedRecord = historyForChapter
+            .filter {
+                it.startTime >= chapterCompletedAt &&
+                    it.durationSeconds >= 60L * 60L &&
+                    revisionStageId(it.revisionStage) == stage.id
+            }
+            .maxByOrNull { it.endTime }
+
+        val isCompleted = completedRecord != null
+
+        if (isCompleted) {
+            result.add(
+                StageScheduleInfo(
+                    stage = stage,
+                    isCompleted = true,
+                    dueDateMs = null,
+                    isUpcoming = false
+                )
+            )
+            // The completion time of this stage will be the baseline for the next stage
+            previousStageCompletionTime = completedRecord.endTime
+        } else {
+            if (previousStageCompletionTime != null) {
+                // Preceding stage is complete (or this is stage 1 based on chapter completion)
+                val due = revisionDueAt(previousStageCompletionTime, stage, timeZone)
+                result.add(
+                    StageScheduleInfo(
+                        stage = stage,
+                        isCompleted = false,
+                        dueDateMs = due,
+                        isUpcoming = false
+                    )
+                )
+                // Since this stage is not yet completed, any subsequent stages are upcoming
+                previousStageCompletionTime = null
+            } else {
+                // Previous stage hasn't completed yet; this stage is Upcoming
+                result.add(
+                    StageScheduleInfo(
+                        stage = stage,
+                        isCompleted = false,
+                        dueDateMs = null,
+                        isUpcoming = true
+                    )
+                )
+            }
+        }
+    }
+
+    return result
+}
 
 internal fun revisionStageId(stage: String): String? {
     val normalized = stage.lowercase(java.util.Locale.ROOT)

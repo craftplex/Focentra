@@ -459,19 +459,34 @@ object StudyReminderScheduler {
         }
 
         val completedAt = chapter.completedTimestamp.takeIf { it > 0L } ?: chapter.lastStudiedTimestamp
-        revisionStages.forEach { stage ->
-            val dueAt = revisionDueAt(completedAt, stage)
-            val intent = revisionIntent(context, chapter.id, stage.id, dueAt, chapter.subjectName, chapter.chapterName)
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                revisionRequestCode(chapter.id, stage.id),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            if (dueAt > System.currentTimeMillis()) {
-                setAlarm(context, alarmManager, dueAt, pendingIntent)
-            } else {
-                alarmManager.cancel(pendingIntent)
+        val app = context.applicationContext as? com.niloy.focentra.FocentraApp
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            val historyJson = app?.repository?.getSetting("revision_history_json", "") ?: ""
+            val history = parseRevisionHistoryRecords(historyJson).filter {
+                it.subjectName.equals(chapter.subjectName, ignoreCase = true) &&
+                    it.chapterName.equals(chapter.chapterName, ignoreCase = true)
+            }
+
+            val stageInfos = calculateSequentialRevisionStages(completedAt, history)
+            val nowMillis = System.currentTimeMillis()
+
+            stageInfos.forEach { info ->
+                val stage = info.stage
+                val dueAt = info.dueDateMs
+                val intent = revisionIntent(context, chapter.id, stage.id, dueAt ?: 0L, chapter.subjectName, chapter.chapterName)
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    revisionRequestCode(chapter.id, stage.id),
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                // Only schedule alarm for the active, unlocked (non-upcoming and non-completed) stage with future due time
+                if (!info.isCompleted && !info.isUpcoming && dueAt != null && dueAt > nowMillis) {
+                    setAlarm(context, alarmManager, dueAt, pendingIntent)
+                } else {
+                    alarmManager.cancel(pendingIntent)
+                }
             }
         }
     }
@@ -656,21 +671,19 @@ class StudyReminderReceiver : BroadcastReceiver() {
                             val completedAt = chapter.completedTimestamp.takeIf { it > 0L }
                                 ?: chapter.lastStudiedTimestamp
                             val historyJson = app.repository.getSetting("revision_history_json", "")
-                            val history = if (historyJson.isBlank()) org.json.JSONArray() else org.json.JSONArray(historyJson)
-                            val dueStage = revisionStages.firstOrNull { it.id == stage }
-                            val alreadyRevised = (0 until history.length()).any { index ->
-                                val record = history.getJSONObject(index)
-                                record.optString("subjectName").equals(chapter.subjectName, ignoreCase = true) &&
-                                    record.optString("chapterName").equals(chapter.chapterName, ignoreCase = true) &&
-                                    record.optLong("startTime", record.optLong("timestamp", 0L)) >= completedAt &&
-                                    record.optLong(
-                                        "durationSeconds",
-                                        record.optInt("durationMinutes", 0) * 60L
-                                    ) >= 60L * 60L &&
-                                    revisionStageId(record.optString("revisionStage")) == stage
+                            val history = parseRevisionHistoryRecords(historyJson).filter {
+                                it.subjectName.equals(chapter.subjectName, ignoreCase = true) &&
+                                    it.chapterName.equals(chapter.chapterName, ignoreCase = true)
                             }
-                            if (alreadyRevised || dueStage == null ||
-                                revisionDueAt(completedAt, dueStage) != dueAt ||
+                            val stageInfos = calculateSequentialRevisionStages(completedAt, history)
+                            val currentStageInfo = stageInfos.firstOrNull { it.stage.id == stage }
+
+                            // If this stage is already completed, still upcoming, or due time mismatch / future
+                            if (currentStageInfo == null ||
+                                currentStageInfo.isCompleted ||
+                                currentStageInfo.isUpcoming ||
+                                currentStageInfo.dueDateMs == null ||
+                                currentStageInfo.dueDateMs != dueAt ||
                                 dueAt > System.currentTimeMillis()
                             ) return@launch
                             val title = StudyReminderScheduler.revisionTitle(stage) ?: "Revision Due"

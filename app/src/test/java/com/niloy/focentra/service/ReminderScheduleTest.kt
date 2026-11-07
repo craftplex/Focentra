@@ -6,9 +6,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.Calendar
 import java.util.TimeZone
 
+@RunWith(RobolectricTestRunner::class)
 class ReminderScheduleTest {
     private val utc = TimeZone.getTimeZone("UTC")
 
@@ -154,6 +157,37 @@ class ReminderScheduleTest {
         assertNull(stagesAfterStage1[2].dueDateMs)
         assertTrue(stagesAfterStage1[3].isUpcoming)
         assertNull(stagesAfterStage1[3].dueDateMs)
+    }
+
+    @Test
+    fun parseRevisionHistoryRecordsHandlesEmptyAndValidJson() {
+        assertTrue(parseRevisionHistoryRecords("").isEmpty())
+        assertTrue(parseRevisionHistoryRecords("[]").isEmpty())
+        assertTrue(parseRevisionHistoryRecords("invalid json").isEmpty())
+
+        val json = """
+            [
+              {
+                "id": "rec1",
+                "subjectName": "Mathematics",
+                "chapterName": "Calculus",
+                "durationMinutes": 60,
+                "durationSeconds": 3600,
+                "startTime": 1000,
+                "endTime": 4600,
+                "timestamp": 4600,
+                "revisionStage": "1st Day (Quick Recap)"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = parseRevisionHistoryRecords(json)
+        assertEquals(1, parsed.size)
+        assertEquals("rec1", parsed[0].id)
+        assertEquals("Mathematics", parsed[0].subjectName)
+        assertEquals("Calculus", parsed[0].chapterName)
+        assertEquals(3600L, parsed[0].durationSeconds)
+        assertEquals("1d", revisionStageId(parsed[0].revisionStage))
     }
 
     private fun timeMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =

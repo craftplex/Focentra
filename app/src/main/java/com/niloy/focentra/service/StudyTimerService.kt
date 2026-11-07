@@ -235,14 +235,10 @@ class StudyTimerService : Service() {
             builder.setUsesChronometer(true)
             builder.setShowWhen(true)
             if (modeStr == SessionMode.COUNTDOWN.name || modeStr == SessionMode.POMODORO.name) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    builder.setChronometerCountDown(true)
-                }
+                builder.setChronometerCountDown(true)
                 builder.setWhen(System.currentTimeMillis() + (remainingSec * 1000L))
             } else {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    builder.setChronometerCountDown(false)
-                }
+                builder.setChronometerCountDown(false)
                 builder.setWhen(System.currentTimeMillis() - (focusedSec * 1000L))
             }
         } else {

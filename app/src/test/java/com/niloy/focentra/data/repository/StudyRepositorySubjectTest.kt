@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -345,5 +346,37 @@ class StudyRepositorySubjectTest {
             """[{"front":"Question","back":"Answer"}]""",
             database.settingDao().getSettingValue("flashcards_json")
         )
+    }
+
+    @Test
+    fun ensureBanglaSyllabusSeededMigratesBasicGrammar() = runBlocking {
+        // Pre-insert English 2nd Paper with old chapters
+        val subjectId = database.subjectDao().insertSubject(
+            SubjectEntity(
+                name = "English 2nd Paper",
+                colorHex = "#06B6D4",
+                iconName = "School",
+                targetHours = 30f,
+                description = "HSC English 2nd Paper Syllabus"
+            )
+        )
+        database.chapterDao().insertChapter(
+            ChapterEntity(
+                subjectId = subjectId,
+                subjectName = "English 2nd Paper",
+                chapterName = "1. Prepositions: Appropriate Prepositions & Use in Context",
+                tapCount = 0,
+                status = "পড়া শুরু হয় নাই",
+                orderIndex = 0
+            )
+        )
+
+        // Run ensureBanglaSyllabusSeeded
+        repository.ensureBanglaSyllabusSeeded()
+
+        val chapters = database.chapterDao().getChaptersForSubject(subjectId)
+        val basicGrammar = chapters.find { it.chapterName.contains("Basic Grammar (ACS)", ignoreCase = true) }
+        assertNotNull(basicGrammar)
+        assertEquals("13. Basic Grammar (ACS)", basicGrammar?.chapterName)
     }
 }

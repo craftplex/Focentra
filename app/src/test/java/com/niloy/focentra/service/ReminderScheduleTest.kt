@@ -2,7 +2,9 @@ package com.niloy.focentra.service
 
 import com.niloy.focentra.data.local.entity.ReminderEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
 import java.util.TimeZone
@@ -96,6 +98,62 @@ class ReminderScheduleTest {
             assertEquals(stage.id, revisionStageId(stage.title))
             assertEquals(stage.id, revisionStageId(stage.displayName))
         }
+    }
+
+    @Test
+    fun sequentialRevisionSchedulingUnlocksDatesSequentially() {
+        val chapterCompletedAt = timeMillis(2026, Calendar.NOVEMBER, 1, 10, 0)
+        // With no revision history: Stage 1 is unlocked with due date = completedAt + 1d
+        // Stages 2, 3, 4 are Upcoming (dueDate = null)
+        val initialStages = calculateSequentialRevisionStages(chapterCompletedAt, emptyList(), utc)
+        assertEquals(4, initialStages.size)
+
+        assertEquals("1d", initialStages[0].stage.id)
+        assertFalse(initialStages[0].isCompleted)
+        assertFalse(initialStages[0].isUpcoming)
+        assertEquals(timeMillis(2026, Calendar.NOVEMBER, 2, 10, 0), initialStages[0].dueDateMs)
+
+        assertEquals("3d", initialStages[1].stage.id)
+        assertFalse(initialStages[1].isCompleted)
+        assertTrue(initialStages[1].isUpcoming)
+        assertNull(initialStages[1].dueDateMs)
+
+        assertEquals("7d", initialStages[2].stage.id)
+        assertTrue(initialStages[2].isUpcoming)
+        assertNull(initialStages[2].dueDateMs)
+
+        assertEquals("15d", initialStages[3].stage.id)
+        assertTrue(initialStages[3].isUpcoming)
+        assertNull(initialStages[3].dueDateMs)
+
+        // Now complete Stage 1 on Nov 7 (delayed recap)
+        val stage1Finish = timeMillis(2026, Calendar.NOVEMBER, 7, 11, 0)
+        val stage1Record = com.niloy.focentra.viewmodel.RevisionRecord(
+            subjectName = "English 2nd Paper",
+            chapterName = "13. Basic Grammar (ACS)",
+            durationMinutes = 60,
+            startTime = stage1Finish - 3600_000L,
+            endTime = stage1Finish,
+            revisionStage = "1st Day (Quick Recap)",
+            durationSeconds = 3600L
+        )
+
+        val stagesAfterStage1 = calculateSequentialRevisionStages(chapterCompletedAt, listOf(stage1Record), utc)
+        assertEquals(4, stagesAfterStage1.size)
+        // Stage 1 is complete
+        assertTrue(stagesAfterStage1[0].isCompleted)
+
+        // Stage 2 is unlocked with due date = Nov 7 + 3 days = Nov 10!
+        assertEquals("3d", stagesAfterStage1[1].stage.id)
+        assertFalse(stagesAfterStage1[1].isCompleted)
+        assertFalse(stagesAfterStage1[1].isUpcoming)
+        assertEquals(timeMillis(2026, Calendar.NOVEMBER, 10, 11, 0), stagesAfterStage1[1].dueDateMs)
+
+        // Stage 3 & 4 remain upcoming
+        assertTrue(stagesAfterStage1[2].isUpcoming)
+        assertNull(stagesAfterStage1[2].dueDateMs)
+        assertTrue(stagesAfterStage1[3].isUpcoming)
+        assertNull(stagesAfterStage1[3].dueDateMs)
     }
 
     private fun timeMillis(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =

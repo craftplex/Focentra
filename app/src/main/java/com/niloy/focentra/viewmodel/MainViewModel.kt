@@ -14,6 +14,7 @@ import com.niloy.focentra.service.StudyReminderScheduler
 import com.niloy.focentra.service.revisionDueAt
 import com.niloy.focentra.service.revisionStages
 import com.niloy.focentra.service.revisionStageId
+import com.niloy.focentra.service.calculateSequentialRevisionStages
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -400,26 +401,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val completedAt = ch.completedTimestamp.takeIf { it > 0L } ?: ch.lastStudiedTimestamp
                 if (completedAt <= 0L) return@forEach
 
-                revisionStages.forEach { stage ->
-                    val dueAt = revisionDueAt(completedAt, stage)
-                    val alreadyCompleted = history.any {
-                        it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
-                            it.chapterName.equals(ch.chapterName, ignoreCase = true) &&
-                            it.startTime >= completedAt &&
-                            it.durationSeconds >= 60L * 60L &&
-                            revisionStageId(it.revisionStage) == stage.id
-                    }
-                    if (dueAt <= now && !alreadyCompleted) {
-                        val notifId = "rev_${ch.id}_${stage.id}"
+                val chapterHistory = history.filter {
+                    it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
+                        it.chapterName.equals(ch.chapterName, ignoreCase = true)
+                }
+                val stageInfos = calculateSequentialRevisionStages(completedAt, chapterHistory)
+                stageInfos.forEach { info ->
+                    // Only active (not upcoming and not completed) stages with an reached due date generate due notifications
+                    if (!info.isCompleted && !info.isUpcoming && info.dueDateMs != null && info.dueDateMs <= now) {
+                        val notifId = "rev_${ch.id}_${info.stage.id}"
                         list.add(
                             AppNotification(
                                 id = notifId,
                                 type = NotificationType.REVISION_DUE,
-                                title = stage.title,
+                                title = info.stage.title,
                                 message = "সময় হয়েছে «${ch.chapterName}» (${ch.subjectName}) অধ্যায়টি অন্তত ১ ঘণ্টা রিভিশন করার।",
                                 subjectName = ch.subjectName,
                                 chapterName = ch.chapterName,
-                                timestamp = dueAt
+                                timestamp = info.dueDateMs
                             )
                         )
                     }

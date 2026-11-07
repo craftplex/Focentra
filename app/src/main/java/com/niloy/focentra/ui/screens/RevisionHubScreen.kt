@@ -97,6 +97,7 @@ import com.niloy.focentra.viewmodel.RevisionRecord
 import com.niloy.focentra.service.revisionStages
 import com.niloy.focentra.service.revisionDueAt
 import com.niloy.focentra.service.revisionStageId
+import com.niloy.focentra.service.calculateSequentialRevisionStages
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -105,8 +106,9 @@ import java.util.Locale
 data class ScheduledRevisionItem(
     val chapter: ChapterEntity,
     val stageName: String,
-    val dueDateMs: Long,
-    val daysRemaining: Int
+    val dueDateMs: Long?,
+    val daysRemaining: Int?,
+    val isUpcoming: Boolean = false
 )
 
 private fun calendarDayDifference(fromMillis: Long, toMillis: Long): Int {
@@ -796,34 +798,36 @@ private fun UpcomingScheduledRevisionsSection(viewModel: MainViewModel) {
                 val completedAt = if (ch.completedTimestamp > 0L) ch.completedTimestamp else ch.lastStudiedTimestamp
                 if (completedAt <= 0L) return@forEach
 
-                revisionStages.forEach { stage ->
-                    val dueMs = revisionDueAt(completedAt, stage)
-                    val completed = revisionHistory.any {
-                        it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
-                            it.chapterName.equals(ch.chapterName, ignoreCase = true) &&
-                            it.startTime >= completedAt &&
-                        it.durationSeconds >= 60L * 60L &&
-                        revisionStageId(it.revisionStage) == stage.id
-                    }
-                    if (!completed) {
-                        val daysRemaining = if (dueMs < nowMillis) {
-                            -1
+                val chapterHistory = revisionHistory.filter {
+                    it.subjectName.equals(ch.subjectName, ignoreCase = true) &&
+                        it.chapterName.equals(ch.chapterName, ignoreCase = true)
+                }
+
+                val stageInfos = calculateSequentialRevisionStages(completedAt, chapterHistory)
+                stageInfos.forEach { info ->
+                    if (!info.isCompleted) {
+                        val daysRemaining = if (info.dueDateMs != null) {
+                            if (info.dueDateMs < nowMillis) -1 else calendarDayDifference(nowMillis, info.dueDateMs)
                         } else {
-                            calendarDayDifference(nowMillis, dueMs)
+                            null
                         }
                         result.add(
                             ScheduledRevisionItem(
                                 chapter = ch,
-                                stageName = stage.displayName,
-                                dueDateMs = dueMs,
-                                daysRemaining = daysRemaining
+                                stageName = info.stage.displayName,
+                                dueDateMs = info.dueDateMs,
+                                daysRemaining = daysRemaining,
+                                isUpcoming = info.isUpcoming
                             )
                         )
                     }
                 }
             }
 
-        result.sortedBy { it.dueDateMs }
+        result.sortedWith(
+            compareBy<ScheduledRevisionItem> { it.isUpcoming }
+                .thenBy { it.dueDateMs ?: Long.MAX_VALUE }
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -924,19 +928,32 @@ private fun ScheduledRevisionCard(
     isTimerRunning: Boolean,
     onStart: () -> Unit
 ) {
-    val dateStr = remember(item.dueDateMs) {
-        val sdf = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.getDefault())
-        sdf.format(Date(item.dueDateMs))
+    val dateStr = remember(item.dueDateMs, item.isUpcoming) {
+        if (item.isUpcoming || item.dueDateMs == null) {
+            "Upcoming"
+        } else {
+            val sdf = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.getDefault())
+            sdf.format(Date(item.dueDateMs))
+        }
     }
 
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            containerColor = if (item.isUpcoming) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            }
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .border(
+                1.dp,
+                if (item.isUpcoming) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                RoundedCornerShape(16.dp)
+            )
     ) {
         Column(
             modifier = Modifier
@@ -951,25 +968,34 @@ private fun ScheduledRevisionCard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .background(
+                            if (item.isUpcoming) MaterialTheme.colorScheme.surfaceContainerHighest
+                            else MaterialTheme.colorScheme.primaryContainer
+                        )
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = item.stageName,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
+                        color = if (item.isUpcoming) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary
                     )
                 }
 
                 Text(
                     text = when {
+                        item.isUpcoming || item.daysRemaining == null -> "Upcoming"
                         item.daysRemaining < 0 -> "Overdue"
                         item.daysRemaining == 0 -> "Today"
                         item.daysRemaining == 1 -> "Tomorrow"
                         else -> "In ${item.daysRemaining} days"
                     },
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = if (item.daysRemaining <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                    color = when {
+                        item.isUpcoming || item.daysRemaining == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        item.daysRemaining <= 0 -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.secondary
+                    }
                 )
             }
 
@@ -984,7 +1010,8 @@ private fun ScheduledRevisionCard(
             Text(
                 text = item.chapter.chapterName,
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (item.isUpcoming) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                else MaterialTheme.colorScheme.onSurface
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -1008,15 +1035,22 @@ private fun ScheduledRevisionCard(
 
             Button(
                 onClick = onStart,
-                enabled = !isTimerRunning,
+                enabled = !isTimerRunning && !item.isUpcoming,
                 shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (item.isUpcoming) MaterialTheme.colorScheme.surfaceContainerHighest
+                    else MaterialTheme.colorScheme.primary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
+                ),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                 modifier = Modifier.align(Alignment.End)
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Start 1-Hour Revision", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                Text(
+                    text = if (item.isUpcoming) "Upcoming" else "Start 1-Hour Revision",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                )
             }
         }
     }

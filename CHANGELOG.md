@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.10] - 2026-11-07
+
+- **Bug Fixes & Lint Compliance**: Fixed Android Lint API level errors on theme navigation bar configuration (`tools:targetApi="o_mr1"`).
+- **Sequential Revision Alarm Synchronization**: Synchronized background revision alarms with sequential unlocking logic so subsequent stage alarms are only scheduled once preceding stages complete, and automatically reschedule alarms when revision records are added.
+- **Memory Leak & Optimization**: Cleaned up Context lifecycle in `TimerEngine` singleton and removed obsolete SDK checks in foreground notification builder.
+- **Version Bump**: Updated `versionCode` to `74` and `versionName` to `8.0.10`.
+
 ## [8.0.9] - 2026-11-07
 
 - **Sequential Revision Hub Schedules**: Display all revision stages in the Revision Hub Scheduled tab with upcoming stages marked as 'Upcoming' until preceding stages are completed; dynamically calculate subsequent revision due dates from the completion time of earlier revisions instead of showing premature Overdue statuses.

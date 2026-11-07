@@ -645,7 +645,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (matchingChapter != null) {
             val now = System.currentTimeMillis()
-            updateChapter(chapterAfterRevision(matchingChapter, now))
+            val updatedChapter = chapterAfterRevision(matchingChapter, now)
+            updateChapter(updatedChapter)
+            StudyReminderScheduler.scheduleChapterRevisions(getApplication(), updatedChapter)
         }
     }
 

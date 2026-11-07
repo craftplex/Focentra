@@ -1,5 +1,6 @@
 package com.niloy.focentra.engine
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -139,9 +140,11 @@ internal fun pomodoroPauseStartedAt(autoStart: Boolean, nowMillis: Long): Long =
     if (autoStart) 0L else nowMillis
 
 class TimerEngine private constructor(
-    private val context: Context,
+    appContext: Context,
     private val repository: StudyRepository
 ) {
+    @SuppressLint("StaticFieldLeak")
+    private val context: Context = appContext.applicationContext
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var tickerJob: Job? = null
 
@@ -158,6 +161,7 @@ class TimerEngine private constructor(
     private var completedPomodoroTotals = PomodoroSessionTotals()
 
     companion object {
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: TimerEngine? = null
 

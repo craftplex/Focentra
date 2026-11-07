@@ -130,6 +130,39 @@ internal fun calculateSequentialRevisionStages(
     return result
 }
 
+internal fun parseRevisionHistoryRecords(json: String): List<com.niloy.focentra.viewmodel.RevisionRecord> {
+    if (json.isBlank()) return emptyList()
+    return try {
+        val array = org.json.JSONArray(json)
+        val list = mutableListOf<com.niloy.focentra.viewmodel.RevisionRecord>()
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            val st = obj.optLong("startTime", 0L)
+            val et = obj.optLong("endTime", 0L)
+            val ts = obj.optLong("timestamp", System.currentTimeMillis())
+            list.add(
+                com.niloy.focentra.viewmodel.RevisionRecord(
+                    id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                    subjectName = obj.optString("subjectName", ""),
+                    chapterName = obj.optString("chapterName", ""),
+                    durationMinutes = obj.optInt("durationMinutes", 30),
+                    startTime = if (st > 0) st else ts,
+                    endTime = if (et > 0) et else ts,
+                    timestamp = ts,
+                    revisionStage = obj.optString("revisionStage", "Revision"),
+                    durationSeconds = obj.optLong(
+                        "durationSeconds",
+                        obj.optInt("durationMinutes", 30) * 60L
+                    )
+                )
+            )
+        }
+        list
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
 internal fun revisionStageId(stage: String): String? {
     val normalized = stage.lowercase(java.util.Locale.ROOT)
     return when {

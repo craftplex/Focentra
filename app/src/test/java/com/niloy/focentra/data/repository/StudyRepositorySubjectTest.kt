@@ -13,6 +13,7 @@ import com.niloy.focentra.data.local.entity.StudyGoalEntity
 import com.niloy.focentra.data.local.entity.StudySessionEntity
 import com.niloy.focentra.data.local.entity.StudyTaskEntity
 import com.niloy.focentra.data.local.entity.TopicEntity
+import com.niloy.focentra.data.local.entity.TrashItemType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayOutputStream
@@ -88,6 +89,108 @@ class StudyRepositorySubjectTest {
         assertTrue(database.topicDao().getAllTopics().isEmpty())
         assertTrue(database.chapterDao().getAllChaptersFlow().first().isEmpty())
         assertTrue(database.subjectDao().getAllSubjects().isEmpty())
+    }
+
+    @Test
+    fun deletingSubjectKeepsItsRowsInTrashUntilRestored() = runBlocking {
+        val subjectId = repository.insertSubject(SubjectEntity(name = "Biology"))
+        database.topicDao().insertTopic(
+            TopicEntity(subjectId = subjectId, subjectName = "Biology", name = "Cells")
+        )
+        repository.insertChapter(
+            ChapterEntity(subjectId = subjectId, subjectName = "Biology", chapterName = "Genetics")
+        )
+
+        repository.deleteSubject(database.subjectDao().getSubjectById(subjectId)!!)
+
+        val trashed = database.trashDao().getAllTrashItemsFlow().first().single()
+        assertEquals(TrashItemType.DATABASE_ROWS, trashed.itemType)
+        assertTrue(database.subjectDao().getAllSubjects().isEmpty())
+
+        repository.restoreTrashItem(trashed.id)
+
+        assertEquals("Biology", database.subjectDao().getSubjectById(subjectId)?.name)
+        assertEquals("Cells", database.topicDao().getAllTopics().single().name)
+        assertEquals("Genetics", database.chapterDao().getAllChaptersFlow().first().single().chapterName)
+        assertTrue(database.trashDao().getAllTrashItemsFlow().first().isEmpty())
+    }
+
+    @Test
+    fun deletingTodaysStudyDataArchivesAndRestoresSessionsAndRevisions() = runBlocking {
+        repository.insertSession(
+            StudySessionEntity(
+                startTime = 1_100L,
+                endTime = 1_500L,
+                durationSeconds = 400L,
+                actualFocusedSeconds = 400L,
+                pausedSeconds = 0L,
+                sessionType = "COUNTDOWN",
+                subject = "Physics"
+            )
+        )
+        repository.insertSession(
+            StudySessionEntity(
+                startTime = 2_100L,
+                endTime = 2_500L,
+                durationSeconds = 400L,
+                actualFocusedSeconds = 400L,
+                pausedSeconds = 0L,
+                sessionType = "COUNTDOWN",
+                subject = "Chemistry"
+            )
+        )
+        val revisions = """[{"id":"revision-1","subjectName":"Physics","chapterName":"Motion"}]"""
+
+        val moved = repository.archiveTodaysStudyData(
+            startTime = 1_000L,
+            endTimeExclusive = 2_000L,
+            revisionRecordsJson = revisions,
+            dateLabel = "Test day"
+        )
+
+        assertEquals(2, moved)
+        assertEquals("Chemistry", database.sessionDao().getAllSessions().single().subject)
+        val trashed = database.trashDao().getAllTrashItemsFlow().first().single()
+        assertEquals(TrashItemType.TODAYS_STUDY_DATA, trashed.itemType)
+
+        repository.restoreTrashItem(trashed.id)
+
+        assertEquals(2, database.sessionDao().getAllSessions().size)
+        assertTrue(
+            database.settingDao().getSettingValue("revision_history_json")?.contains("revision-1") == true
+        )
+        assertTrue(database.trashDao().getAllTrashItemsFlow().first().isEmpty())
+    }
+
+    @Test
+    fun clearingAppDataStoresFullSnapshotAndLeavesTrashOutOfTheSnapshot() = runBlocking {
+        val subjectId = repository.insertSubject(SubjectEntity(name = "History"))
+        repository.insertSession(
+            StudySessionEntity(
+                startTime = 1L,
+                endTime = 2L,
+                durationSeconds = 1L,
+                actualFocusedSeconds = 1L,
+                pausedSeconds = 0L,
+                sessionType = "COUNTDOWN",
+                subject = "History"
+            )
+        )
+        database.settingDao().setSetting(SettingEntity("custom_data", "keep"))
+
+        repository.clearAllAppDataToTrash()
+
+        val trashed = database.trashDao().getAllTrashItemsFlow().first().single()
+        assertEquals(TrashItemType.APP_SNAPSHOT, trashed.itemType)
+        assertTrue(database.sessionDao().getAllSessions().isEmpty())
+        assertTrue(database.trashDao().getAllTrashItemsFlow().first().isNotEmpty())
+
+        repository.restoreTrashItem(trashed.id)
+
+        assertEquals("History", database.subjectDao().getSubjectById(subjectId)?.name)
+        assertEquals("History", database.sessionDao().getAllSessions().single().subject)
+        assertEquals("keep", repository.getSetting("custom_data"))
+        assertTrue(database.trashDao().getAllTrashItemsFlow().first().isEmpty())
     }
 
     @Test

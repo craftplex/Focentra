@@ -1,6 +1,7 @@
 package com.niloy.focentra.viewmodel
 
 import android.app.Application
+import android.database.sqlite.SQLiteConstraintException
 import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import org.json.JSONObject
 
 enum class NotificationType {
     REVISION_DUE,
@@ -222,9 +224,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _snackbarMessage = MutableSharedFlow<String>()
     val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
 
-    // Last deleted session for undo
-    private var lastDeletedSession: StudySessionEntity? = null
-
     // Room DB streams
     val sessions = repository.allSessions.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val subjects = repository.allSubjects.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -238,6 +237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val chapters = repository.allChapters.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val dbNotifications = repository.allNotifications.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val dbRevisionSkips = repository.allRevisionSkips.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val trashItems = repository.allTrashItems.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun addChapter(subjectId: Long, subjectName: String, chapterName: String) {
         if (chapterName.isBlank()) return
@@ -649,8 +649,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteRevisionRecord(id: String) {
-        _revisionHistory.value = _revisionHistory.value.filter { it.id != id }
-        persistRevisionHistory()
+        val record = _revisionHistory.value.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            repository.addTrashItem(
+                title = "Revision — ${record.chapterName}",
+                itemType = TrashItemType.REVISION_RECORD,
+                payloadJson = JSONObject().put("record", revisionRecordJson(record)).toString()
+            )
+            _revisionHistory.value = _revisionHistory.value.filterNot { it.id == id }
+            saveRevisionHistory(_revisionHistory.value)
+            _snackbarMessage.emit("Revision moved to Trash.")
+        }
     }
 
     init {
@@ -714,6 +723,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadPersistentUserData() {
         try {
             // Load Brain Dumps
+            _brainDumpNotes.value = emptyList()
             val bdJson = repository.getSetting("brain_dumps_json", "")
             if (bdJson.isNotBlank()) {
                 val array = org.json.JSONArray(bdJson)
@@ -735,6 +745,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 
             // Load Exam Targets
+            _examTargets.value = emptyList()
             val etJson = repository.getSetting("exam_targets_json", "")
             if (etJson.isNotBlank()) {
                 val array = org.json.JSONArray(etJson)
@@ -756,6 +767,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             // Load Seen, Dismissed, and Posted Notification IDs
+            _seenNotificationIds.value = emptySet()
+            _dismissedNotificationIds.value = emptySet()
+            _postedNotificationIds.value = emptySet()
             val seenStr = repository.getSetting("seen_notification_ids", "")
             if (seenStr.isNotBlank()) {
                 _seenNotificationIds.value = seenStr.split(",").filter { it.isNotBlank() }.toSet()
@@ -771,6 +785,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _notificationStateLoaded.value = true
 
             // Load Revision History
+            _revisionHistory.value = emptyList()
             val rhJson = repository.getSetting("revision_history_json", "")
             if (rhJson.isNotBlank()) {
                 val array = org.json.JSONArray(rhJson)
@@ -838,18 +853,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistBrainDumps() {
         viewModelScope.launch {
             try {
-                val array = org.json.JSONArray()
-                _brainDumpNotes.value.forEach { note ->
-                    val obj = org.json.JSONObject().apply {
-                        put("id", note.id)
-                        put("note", note.note)
-                        put("timestamp", note.timestamp)
-                        put("subject", note.subject)
-                        put("isDone", note.isDone)
-                    }
-                    array.put(obj)
-                }
-                repository.setSetting("brain_dumps_json", array.toString())
+                saveBrainDumps(_brainDumpNotes.value)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -859,22 +863,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistRevisionHistory() {
         viewModelScope.launch {
             try {
-                val array = org.json.JSONArray()
-                _revisionHistory.value.forEach { rec ->
-                    val obj = org.json.JSONObject().apply {
-                        put("id", rec.id)
-                        put("subjectName", rec.subjectName)
-                        put("chapterName", rec.chapterName)
-                        put("durationMinutes", rec.durationMinutes)
-                        put("durationSeconds", rec.durationSeconds)
-                        put("startTime", rec.startTime)
-                        put("endTime", rec.endTime)
-                        put("timestamp", rec.timestamp)
-                        put("revisionStage", rec.revisionStage)
-                    }
-                    array.put(obj)
-                }
-                repository.setSetting("revision_history_json", array.toString())
+                saveRevisionHistory(_revisionHistory.value)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -885,23 +874,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistExamTargets() {
         viewModelScope.launch {
             try {
-                val array = org.json.JSONArray()
-                _examTargets.value.forEach { target ->
-                    val obj = org.json.JSONObject().apply {
-                        put("id", target.id)
-                        put("title", target.title)
-                        put("targetDateEpochMs", target.targetDateEpochMs)
-                        put("targetHours", target.targetHours.toDouble())
-                        put("subject", target.subject)
-                        put("notes", target.notes)
-                    }
-                    array.put(obj)
-                }
-                repository.setSetting("exam_targets_json", array.toString())
+                saveExamTargets(_examTargets.value)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
+    }
+
+    private suspend fun saveBrainDumps(notes: List<BrainDumpNote>) {
+        val array = org.json.JSONArray()
+        notes.forEach { array.put(brainDumpJson(it)) }
+        repository.setSetting("brain_dumps_json", array.toString())
+    }
+
+    private suspend fun saveRevisionHistory(records: List<RevisionRecord>) {
+        val array = org.json.JSONArray()
+        records.forEach { array.put(revisionRecordJson(it)) }
+        repository.setSetting("revision_history_json", array.toString())
+    }
+
+    private suspend fun saveExamTargets(targets: List<ExamTarget>) {
+        val array = org.json.JSONArray()
+        targets.forEach { array.put(examTargetJson(it)) }
+        repository.setSetting("exam_targets_json", array.toString())
+    }
+
+    private fun brainDumpJson(note: BrainDumpNote) = JSONObject().apply {
+        put("id", note.id)
+        put("note", note.note)
+        put("timestamp", note.timestamp)
+        put("subject", note.subject)
+        put("isDone", note.isDone)
+    }
+
+    private fun revisionRecordJson(record: RevisionRecord) = JSONObject().apply {
+        put("id", record.id)
+        put("subjectName", record.subjectName)
+        put("chapterName", record.chapterName)
+        put("durationMinutes", record.durationMinutes)
+        put("durationSeconds", record.durationSeconds)
+        put("startTime", record.startTime)
+        put("endTime", record.endTime)
+        put("timestamp", record.timestamp)
+        put("revisionStage", record.revisionStage)
+    }
+
+    private fun examTargetJson(target: ExamTarget) = JSONObject().apply {
+        put("id", target.id)
+        put("title", target.title)
+        put("targetDateEpochMs", target.targetDateEpochMs)
+        put("targetHours", target.targetHours.toDouble())
+        put("subject", target.subject)
+        put("notes", target.notes)
     }
 
     fun setDaynexaConsent(enabled: Boolean) {
@@ -1250,32 +1274,113 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteSession(session: StudySessionEntity) {
-        lastDeletedSession = session
         viewModelScope.launch {
             repository.deleteSession(session)
-            _snackbarMessage.emit("Session deleted. Tap Undo to restore.")
+            _snackbarMessage.emit("Session moved to Trash.")
         }
     }
 
-    fun undoDeleteSession() {
-        val session = lastDeletedSession ?: return
+    fun deleteTodaysStudyData(startTime: Long, endTimeExclusive: Long, dateLabel: String) {
         viewModelScope.launch {
-            repository.insertSession(session)
-            lastDeletedSession = null
-            _snackbarMessage.emit("Session restored.")
+            val deletedRevisions = _revisionHistory.value.filter {
+                it.startTime < endTimeExclusive && it.endTime >= startTime
+            }
+            val revisionJson = org.json.JSONArray().apply {
+                deletedRevisions.forEach { put(revisionRecordJson(it)) }
+            }.toString()
+            val movedCount = repository.archiveTodaysStudyData(
+                startTime = startTime,
+                endTimeExclusive = endTimeExclusive,
+                revisionRecordsJson = revisionJson,
+                dateLabel = dateLabel
+            )
+            if (movedCount == 0) {
+                _snackbarMessage.emit("No study data found for today.")
+                return@launch
+            }
+            _revisionHistory.value = _revisionHistory.value.filterNot { it in deletedRevisions }
+            saveRevisionHistory(_revisionHistory.value)
+            _snackbarMessage.emit("$movedCount study record(s) moved to Trash.")
         }
     }
 
     fun clearAllAppData() {
         viewModelScope.launch {
             reminders.value.forEach { StudyReminderScheduler.cancel(getApplication(), it.id) }
-            repository.clearAllAppData()
+            repository.clearAllAppDataToTrash()
             _brainDumpNotes.value = emptyList()
             _examTargets.value = emptyList()
+            _revisionHistory.value = emptyList()
+            val themeSetting = repository.getSetting("theme", app.getInitialTheme())
+            _currentTheme.value = themeSetting
+            app.saveCachedTheme(themeSetting)
+            val langSetting = repository.getSetting("language", app.getInitialLanguage())
+            _language.value = langSetting
+            app.saveCachedLanguage(langSetting)
+            _isDaynexaConnected.value = false
+            _daynexaConnectedAt.value = 0L
+            _streakPassUsedMonth.value = ""
+            loadPersistentUserData()
             StudyReminderScheduler.scheduleAll(
                 getApplication(),
                 repository.allReminders.first()
             )
+            _snackbarMessage.emit("App data moved to Trash.")
+        }
+    }
+
+    fun restoreTrashItem(id: String) {
+        viewModelScope.launch {
+            val item = try {
+                repository.restoreTrashItem(id)
+            } catch (error: SQLiteConstraintException) {
+                _snackbarMessage.emit("Restore failed because a matching record already exists. The item remains in Trash.")
+                return@launch
+            } ?: return@launch
+            if (item.itemType == TrashItemType.APP_SNAPSHOT ||
+                item.itemType == TrashItemType.TODAYS_STUDY_DATA ||
+                item.itemType == TrashItemType.REVISION_RECORD ||
+                item.itemType == TrashItemType.BRAIN_DUMP_NOTE ||
+                item.itemType == TrashItemType.BRAIN_DUMP_NOTES ||
+                item.itemType == TrashItemType.EXAM_TARGET
+            ) {
+                loadPersistentUserData()
+            }
+            if (item.itemType == TrashItemType.APP_SNAPSHOT) {
+                val theme = repository.getSetting("theme", app.getInitialTheme())
+                _currentTheme.value = theme
+                app.saveCachedTheme(theme)
+                val lang = repository.getSetting("language", app.getInitialLanguage())
+                _language.value = lang
+                app.saveCachedLanguage(lang)
+                _isDaynexaConnected.value = repository.getSetting("daynexa_integration_enabled", "false")
+                    .equals("true", ignoreCase = true)
+                _daynexaConnectedAt.value =
+                    repository.getSetting("daynexa_connected_timestamp", "0").toLongOrNull() ?: 0L
+                _streakPassUsedMonth.value = repository.getSetting("streak_pass_month", "")
+            }
+            if (item.itemType == TrashItemType.APP_SNAPSHOT ||
+                item.title.startsWith("Reminder —") ||
+                item.title.startsWith("Subject —") ||
+                item.title.startsWith("Chapter —")
+            ) {
+                rescheduleReminders()
+            }
+            _snackbarMessage.emit("Restored «${item.title}».")
+        }
+    }
+
+    fun permanentlyDeleteTrashItem(id: String) {
+        viewModelScope.launch {
+            repository.deleteTrashItem(id)
+            _snackbarMessage.emit("Item permanently deleted.")
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            repository.emptyTrash()
+            _snackbarMessage.emit("Trash emptied.")
         }
     }
 
@@ -1361,13 +1466,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteBrainDumpNote(id: String) {
-        _brainDumpNotes.value = _brainDumpNotes.value.filter { it.id != id }
-        persistBrainDumps()
+        val note = _brainDumpNotes.value.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            repository.addTrashItem(
+                title = "Brain-dump note",
+                itemType = TrashItemType.BRAIN_DUMP_NOTE,
+                payloadJson = JSONObject().put("note", brainDumpJson(note)).toString()
+            )
+            _brainDumpNotes.value = _brainDumpNotes.value.filterNot { it.id == id }
+            saveBrainDumps(_brainDumpNotes.value)
+            _snackbarMessage.emit("Note moved to Trash.")
+        }
     }
 
     fun clearCompletedBrainDumps() {
-        _brainDumpNotes.value = _brainDumpNotes.value.filter { !it.isDone }
-        persistBrainDumps()
+        val completed = _brainDumpNotes.value.filter { it.isDone }
+        if (completed.isEmpty()) return
+        viewModelScope.launch {
+            val notes = org.json.JSONArray().apply { completed.forEach { put(brainDumpJson(it)) } }
+            repository.addTrashItem(
+                title = "Completed brain-dump notes (${completed.size})",
+                itemType = TrashItemType.BRAIN_DUMP_NOTES,
+                payloadJson = JSONObject().put("notes", notes).toString()
+            )
+            _brainDumpNotes.value = _brainDumpNotes.value.filterNot { it.isDone }
+            saveBrainDumps(_brainDumpNotes.value)
+            _snackbarMessage.emit("Completed notes moved to Trash.")
+        }
     }
 
 
@@ -1395,8 +1520,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteExamTarget(id: String) {
-        _examTargets.value = _examTargets.value.filter { it.id != id }
-        persistExamTargets()
+        val target = _examTargets.value.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            repository.addTrashItem(
+                title = "Exam target — ${target.title}",
+                itemType = TrashItemType.EXAM_TARGET,
+                payloadJson = JSONObject().put("target", examTargetJson(target)).toString()
+            )
+            _examTargets.value = _examTargets.value.filterNot { it.id == id }
+            saveExamTargets(_examTargets.value)
+            _snackbarMessage.emit("Exam target moved to Trash.")
+        }
     }
 
     fun editExamTarget(updated: ExamTarget) {

@@ -43,11 +43,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.niloy.focentra.BuildConfig
 import com.niloy.focentra.data.local.entity.ReminderEntity
+import com.niloy.focentra.ui.components.TrashBinDialog
 import com.niloy.focentra.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -80,6 +82,7 @@ fun SettingsScreen(
     val currentTheme by viewModel.currentTheme.collectAsStateWithLifecycle()
     val goals by viewModel.goals.collectAsStateWithLifecycle()
     val reminders by viewModel.reminders.collectAsStateWithLifecycle()
+    val trashItems by viewModel.trashItems.collectAsStateWithLifecycle()
     val isDaynexaConnected by viewModel.isDaynexaConnected.collectAsStateWithLifecycle()
 
     var showGoalEditDialog by remember { mutableStateOf<String?>(null) }
@@ -91,6 +94,8 @@ fun SettingsScreen(
     var showDaynexaConsentDialog by remember { mutableStateOf(false) }
     var showDaynexaDisconnectDialog by remember { mutableStateOf(false) }
     var showClearAllDataDialog by remember { mutableStateOf(false) }
+    var showDeleteTodaysDataDialog by remember { mutableStateOf(false) }
+    var showTrashBinDialog by remember { mutableStateOf(false) }
 
     var importJsonText by remember { mutableStateOf("") }
     var importCsvText by remember { mutableStateOf("") }
@@ -146,7 +151,7 @@ fun SettingsScreen(
             },
             text = {
                 Text(
-                    text = "Are you sure you want to delete all study sessions, subjects, presets, goals, and exam milestones? This action cannot be undone.",
+                    text = "All current app data will be moved to Trash. Nothing is permanently deleted until you manually delete it from the Trash Bin.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -159,7 +164,7 @@ fun SettingsScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Clear Everything")
+                    Text("Move Everything to Trash")
                 }
             },
             dismissButton = {
@@ -167,6 +172,66 @@ fun SettingsScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    if (showDeleteTodaysDataDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteTodaysDataDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Delete Today's Study Data?") },
+            text = {
+                Text(
+                    "Today's saved study sessions and revisions will be moved to Trash. You can restore them later; they will not be permanently deleted unless you delete them yourself."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteTodaysDataDialog = false
+                        val start = Calendar.getInstance().apply {
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        val end = (start.clone() as Calendar).apply {
+                            add(Calendar.DAY_OF_YEAR, 1)
+                        }
+                        val label = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
+                            .format(Date(start.timeInMillis))
+                        viewModel.deleteTodaysStudyData(
+                            startTime = start.timeInMillis,
+                            endTimeExclusive = end.timeInMillis,
+                            dateLabel = label
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Move to Trash")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteTodaysDataDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showTrashBinDialog) {
+        TrashBinDialog(
+            items = trashItems,
+            onDismiss = { showTrashBinDialog = false },
+            onRestore = viewModel::restoreTrashItem,
+            onPermanentlyDelete = viewModel::permanentlyDeleteTrashItem,
+            onEmptyTrash = viewModel::emptyTrash
         )
     }
 
@@ -995,9 +1060,28 @@ fun SettingsScreen(
                     )
 
                     ActionTile(
+                        icon = Icons.Default.DeleteOutline,
+                        title = "Delete Today's Study Data",
+                        subtitle = "Move today's saved study sessions and revisions to Trash",
+                        onClick = { showDeleteTodaysDataDialog = true }
+                    )
+
+                    ActionTile(
+                        icon = Icons.Default.DeleteSweep,
+                        title = "Trash Bin (${trashItems.size})",
+                        subtitle = "Restore items or permanently delete them yourself",
+                        onClick = { showTrashBinDialog = true }
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    ActionTile(
                         icon = Icons.Default.DeleteForever,
                         title = "Clear All App Data",
-                        subtitle = "Wipe database, sessions and restore default settings",
+                        subtitle = "Move all app data to Trash and restore default settings",
                         onClick = { showClearAllDataDialog = true }
                     )
                 }

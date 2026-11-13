@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.11] - 2026-11-13
+
+- **Trash Bin & Study Data**: Add a warning-confirmed action to move today's sessions and revisions into a persistent Trash Bin; deleted app data can be restored or manually deleted permanently.
+- **Database Migration**: Add durable trash storage without expiring or automatically purging deleted items.
+- **Version Bump**: Updated `versionCode` to `75` and `versionName` to `8.0.11`.
+
 ## [8.0.10] - 2026-11-07
 
 - **Bug Fixes & Lint Compliance**: Fixed Android Lint API level errors on theme navigation bar configuration (`tools:targetApi="o_mr1"`).

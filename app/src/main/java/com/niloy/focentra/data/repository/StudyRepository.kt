@@ -1,8 +1,13 @@
 package com.niloy.focentra.data.repository
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
+import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
+import android.util.Base64
 import androidx.room.withTransaction
+import androidx.sqlite.db.SimpleSQLiteQuery
 import com.niloy.focentra.data.local.AppDatabase
 import com.niloy.focentra.data.local.SyllabusData
 import com.niloy.focentra.data.local.entity.*
@@ -102,6 +107,20 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
 
     private val appContext = context.applicationContext
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val appDataTables = listOf(
+        "study_sessions",
+        "subjects",
+        "topics",
+        "study_goals",
+        "presets",
+        "achievements",
+        "reminders",
+        "user_settings",
+        "daily_tasks",
+        "chapters",
+        "notifications",
+        "revision_skips"
+    )
 
     val allSessions: Flow<List<StudySessionEntity>> = database.sessionDao().getAllSessionsFlow()
     val allSubjects: Flow<List<SubjectEntity>> = database.subjectDao().getAllSubjectsFlow()
@@ -115,6 +134,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     val allChapters: Flow<List<ChapterEntity>> = database.chapterDao().getAllChaptersFlow()
     val allNotifications: Flow<List<NotificationEntity>> = database.notificationDao().getAllNotificationsFlow()
     val allRevisionSkips: Flow<List<RevisionSkipEntity>> = database.revisionSkipDao().getAllSkipsFlow()
+    val allTrashItems: Flow<List<TrashItemEntity>> = database.trashDao().getAllTrashItemsFlow()
 
     suspend fun insertNotification(notification: NotificationEntity) = withContext(Dispatchers.IO) {
         database.notificationDao().insertNotification(notification)
@@ -125,11 +145,33 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteNotificationById(id: String) = withContext(Dispatchers.IO) {
-        database.notificationDao().deleteNotificationById(id)
+        archiveTableData(
+            title = "Notification",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "notifications",
+                    selectSql = "SELECT * FROM notifications WHERE id = ?",
+                    args = arrayOf(id),
+                    deleteSql = "DELETE FROM notifications WHERE id = ?",
+                    deleteArgs = arrayOf(id)
+                )
+            )
+        )
     }
 
     suspend fun clearAllNotifications() = withContext(Dispatchers.IO) {
-        database.notificationDao().clearAllNotifications()
+        archiveTableData(
+            title = "Notifications",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "notifications",
+                    selectSql = "SELECT * FROM notifications",
+                    deleteSql = "DELETE FROM notifications"
+                )
+            )
+        )
     }
 
     suspend fun insertRevisionSkip(skip: RevisionSkipEntity) = withContext(Dispatchers.IO) {
@@ -141,11 +183,21 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteRevisionSkip(skip: RevisionSkipEntity) = withContext(Dispatchers.IO) {
-        database.revisionSkipDao().deleteSkip(skip)
+        archiveSingleStringRow("Revision skip", "revision_skips", skip.id)
     }
 
     suspend fun clearAllRevisionSkips() = withContext(Dispatchers.IO) {
-        database.revisionSkipDao().clearAllSkips()
+        archiveTableData(
+            title = "Revision skips",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "revision_skips",
+                    selectSql = "SELECT * FROM revision_skips",
+                    deleteSql = "DELETE FROM revision_skips"
+                )
+            )
+        )
     }
 
     suspend fun ensureBanglaSyllabusSeeded() = withContext(Dispatchers.IO) {
@@ -453,6 +505,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
                         )
                     )
                 }
+
             } else {
                 // If subject already exists, ensure all syllabus chapters exist and spelling is correct
                 val existingChapters = database.chapterDao().getChaptersForSubject(existing.id)
@@ -523,7 +576,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteChapter(chapter: ChapterEntity) = withContext(Dispatchers.IO) {
-        database.chapterDao().deleteChapter(chapter)
+        archiveChapter(chapter)
     }
 
     suspend fun insertTask(task: StudyTaskEntity) = withContext(Dispatchers.IO) {
@@ -535,11 +588,21 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteTask(task: StudyTaskEntity) = withContext(Dispatchers.IO) {
-        database.taskDao().deleteTask(task)
+        archiveTask(task)
     }
 
     suspend fun clearCompletedTasks() = withContext(Dispatchers.IO) {
-        database.taskDao().clearCompletedTasks()
+        archiveTableData(
+            title = "Completed daily tasks",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "daily_tasks",
+                    selectSql = "SELECT * FROM daily_tasks WHERE isCompleted = 1",
+                    deleteSql = "DELETE FROM daily_tasks WHERE isCompleted = 1"
+                )
+            )
+        )
     }
 
     suspend fun insertSession(session: StudySessionEntity): Long = withContext(Dispatchers.IO) {
@@ -596,17 +659,367 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteSession(session: StudySessionEntity) = withContext(Dispatchers.IO) {
-        database.sessionDao().deleteSession(session)
+        archiveTableData(
+            title = "Study session — ${session.subject}",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "study_sessions",
+                    selectSql = "SELECT * FROM study_sessions WHERE id = ?",
+                    args = arrayOf(session.id),
+                    deleteSql = "DELETE FROM study_sessions WHERE id = ?",
+                    deleteArgs = arrayOf(session.id)
+                )
+            )
+        )
         checkAndUnlockAchievements()
     }
 
+    suspend fun archiveTodaysStudyData(
+        startTime: Long,
+        endTimeExclusive: Long,
+        revisionRecordsJson: String,
+        dateLabel: String
+    ): Int = withContext(Dispatchers.IO) {
+        val revisionRecords = JSONArray(revisionRecordsJson)
+        val extra = JSONObject().put("revisionRecords", revisionRecords)
+        archiveTableData(
+            title = "Study data — $dateLabel",
+            itemType = TrashItemType.TODAYS_STUDY_DATA,
+            selections = listOf(
+                TrashTableAction(
+                    table = "study_sessions",
+                    selectSql = "SELECT * FROM study_sessions WHERE startTime < ? AND endTime >= ?",
+                    args = arrayOf(endTimeExclusive, startTime),
+                    deleteSql = "DELETE FROM study_sessions WHERE startTime < ? AND endTime >= ?",
+                    deleteArgs = arrayOf(endTimeExclusive, startTime)
+                )
+            ),
+            extraPayload = extra,
+            additionalItemCount = revisionRecords.length()
+        ).also {
+            if (it > 0) checkAndUnlockAchievements()
+        }
+    }
+
+    suspend fun archiveSubject(subject: SubjectEntity) = withContext(Dispatchers.IO) {
+        archiveTableData(
+            title = "Subject — ${subject.name}",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "subjects",
+                    selectSql = "SELECT * FROM subjects WHERE id = ?",
+                    args = arrayOf(subject.id),
+                    deleteSql = "DELETE FROM subjects WHERE id = ?",
+                    deleteArgs = arrayOf(subject.id)
+                ),
+                TrashTableAction(
+                    table = "topics",
+                    selectSql = "SELECT * FROM topics WHERE subjectId = ?",
+                    args = arrayOf(subject.id),
+                    deleteSql = "DELETE FROM topics WHERE subjectId = ?",
+                    deleteArgs = arrayOf(subject.id)
+                ),
+                TrashTableAction(
+                    table = "chapters",
+                    selectSql = "SELECT * FROM chapters WHERE subjectId = ?",
+                    args = arrayOf(subject.id),
+                    deleteSql = "DELETE FROM chapters WHERE subjectId = ?",
+                    deleteArgs = arrayOf(subject.id)
+                )
+            )
+        )
+    }
+
+    suspend fun archiveChapter(chapter: ChapterEntity) = withContext(Dispatchers.IO) {
+        archiveSingleRow("Chapter — ${chapter.chapterName}", "chapters", chapter.id)
+    }
+
+    suspend fun archiveTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
+        archiveSingleRow("Topic — ${topic.name}", "topics", topic.id)
+    }
+
+    suspend fun archiveTask(task: StudyTaskEntity) = withContext(Dispatchers.IO) {
+        archiveSingleRow("Task — ${task.title}", "daily_tasks", task.id)
+    }
+
+    suspend fun archivePreset(preset: PresetEntity) = withContext(Dispatchers.IO) {
+        archiveSingleRow("Preset — ${preset.title}", "presets", preset.id)
+    }
+
+    suspend fun archiveReminder(reminder: ReminderEntity) = withContext(Dispatchers.IO) {
+        archiveSingleRow("Reminder — ${reminder.title}", "reminders", reminder.id)
+    }
+
+    suspend fun addTrashItem(title: String, itemType: String, payloadJson: String) = withContext(Dispatchers.IO) {
+        database.trashDao().insertTrashItem(
+            TrashItemEntity(title = title, itemType = itemType, payloadJson = payloadJson)
+        )
+    }
+
+    suspend fun clearAllAppDataToTrash() = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            archiveFullSnapshotInTransaction("All app data")
+            clearAppDataTables()
+            AppDatabase.populateInitialData(database)
+        }
+    }
+
+    suspend fun restoreTrashItem(id: String): TrashItemEntity? = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            val item = database.trashDao().getTrashItem(id) ?: return@withTransaction null
+            val payload = JSONObject(item.payloadJson)
+            when (item.itemType) {
+                TrashItemType.APP_SNAPSHOT -> {
+                    clearAppDataTables()
+                    restoreTableRows(payload.getJSONObject("tables"))
+                }
+                TrashItemType.TODAYS_STUDY_DATA -> {
+                    restoreTableRows(payload.getJSONObject("tables"))
+                    mergeSettingArray(
+                        key = "revision_history_json",
+                        additions = payload.optJSONArray("revisionRecords") ?: JSONArray(),
+                        idField = "id"
+                    )
+                }
+                TrashItemType.REVISION_RECORD -> {
+                    mergeSettingArray(
+                        key = "revision_history_json",
+                        additions = JSONArray().put(payload.getJSONObject("record")),
+                        idField = "id"
+                    )
+                }
+                TrashItemType.BRAIN_DUMP_NOTE -> {
+                    mergeSettingArray(
+                        key = "brain_dumps_json",
+                        additions = JSONArray().put(payload.getJSONObject("note")),
+                        idField = "id"
+                    )
+                }
+                TrashItemType.BRAIN_DUMP_NOTES -> {
+                    mergeSettingArray(
+                        key = "brain_dumps_json",
+                        additions = payload.optJSONArray("notes") ?: JSONArray(),
+                        idField = "id"
+                    )
+                }
+                TrashItemType.EXAM_TARGET -> {
+                    mergeSettingArray(
+                        key = "exam_targets_json",
+                        additions = JSONArray().put(payload.getJSONObject("target")),
+                        idField = "id"
+                    )
+                }
+                else -> restoreTableRows(payload.getJSONObject("tables"))
+            }
+            database.trashDao().deleteTrashItem(id)
+            item
+        }
+    }
+
+    suspend fun deleteTrashItem(id: String) = withContext(Dispatchers.IO) {
+        database.trashDao().deleteTrashItem(id)
+    }
+
+    suspend fun emptyTrash() = withContext(Dispatchers.IO) {
+        database.trashDao().emptyTrash()
+    }
+
+    private suspend fun archiveSingleRow(title: String, table: String, id: Long) {
+        archiveTableData(
+            title = title,
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = table,
+                    selectSql = "SELECT * FROM $table WHERE id = ?",
+                    args = arrayOf(id),
+                    deleteSql = "DELETE FROM $table WHERE id = ?",
+                    deleteArgs = arrayOf(id)
+                )
+            )
+        )
+    }
+
+    private suspend fun archiveSingleStringRow(title: String, table: String, id: String) {
+        archiveTableData(
+            title = title,
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = table,
+                    selectSql = "SELECT * FROM $table WHERE id = ?",
+                    args = arrayOf(id),
+                    deleteSql = "DELETE FROM $table WHERE id = ?",
+                    deleteArgs = arrayOf(id)
+                )
+            )
+        )
+    }
+
+    private suspend fun archiveTableData(
+        title: String,
+        itemType: String,
+        selections: List<TrashTableAction>,
+        extraPayload: JSONObject = JSONObject(),
+        additionalItemCount: Int = 0
+    ): Int = database.withTransaction {
+        archiveTableDataInTransaction(title, itemType, selections, extraPayload, additionalItemCount)
+    }
+
+    private suspend fun archiveTableDataInTransaction(
+        title: String,
+        itemType: String,
+        selections: List<TrashTableAction>,
+        extraPayload: JSONObject = JSONObject(),
+        additionalItemCount: Int = 0
+    ): Int {
+        val tableRows = JSONObject()
+        var rowCount = 0
+        selections.forEach { action ->
+            require(action.table in appDataTables) { "Unsupported trash table: ${action.table}" }
+            val rows = queryRows(action.selectSql, action.args)
+            rowCount += rows.length()
+            tableRows.put(action.table, rows)
+        }
+        val itemCount = rowCount + additionalItemCount
+        if (itemCount == 0) return 0
+
+        val payload = JSONObject(extraPayload.toString()).put("tables", tableRows)
+        database.trashDao().insertTrashItem(
+            TrashItemEntity(
+                title = title,
+                itemType = itemType,
+                payloadJson = payload.toString()
+            )
+        )
+        selections.forEach { action ->
+            action.deleteSql?.let { sql ->
+                database.openHelper.writableDatabase.execSQL(sql, action.deleteArgs)
+            }
+        }
+        return itemCount
+    }
+
+    private suspend fun archiveFullSnapshotInTransaction(title: String) {
+        val tables = snapshotAllAppDataTables()
+        val rowCount = appDataTables.sumOf { tables.getJSONArray(it).length() }
+        if (rowCount == 0) return
+        database.trashDao().insertTrashItem(
+            TrashItemEntity(
+                title = title,
+                itemType = TrashItemType.APP_SNAPSHOT,
+                payloadJson = JSONObject().put("tables", tables).toString()
+            )
+        )
+    }
+
+    private fun snapshotAllAppDataTables(): JSONObject = JSONObject().apply {
+        appDataTables.forEach { table ->
+            put(table, queryRows("SELECT * FROM $table", emptyArray()))
+        }
+    }
+
+    private fun queryRows(sql: String, args: Array<Any?>): JSONArray {
+        val rows = JSONArray()
+        database.query(SimpleSQLiteQuery(sql, args)).use { cursor ->
+            while (cursor.moveToNext()) {
+                val row = JSONObject()
+                for (columnIndex in 0 until cursor.columnCount) {
+                    val columnName = cursor.getColumnName(columnIndex)
+                    when (cursor.getType(columnIndex)) {
+                        Cursor.FIELD_TYPE_NULL -> row.put(columnName, JSONObject.NULL)
+                        Cursor.FIELD_TYPE_INTEGER -> row.put(columnName, cursor.getLong(columnIndex))
+                        Cursor.FIELD_TYPE_FLOAT -> row.put(columnName, cursor.getDouble(columnIndex))
+                        Cursor.FIELD_TYPE_STRING -> row.put(columnName, cursor.getString(columnIndex))
+                        Cursor.FIELD_TYPE_BLOB -> row.put(
+                            columnName,
+                            "base64:${Base64.encodeToString(cursor.getBlob(columnIndex), Base64.NO_WRAP)}"
+                        )
+                    }
+                }
+                rows.put(row)
+            }
+        }
+        return rows
+    }
+
+    private fun clearAppDataTables() {
+        val db = database.openHelper.writableDatabase
+        appDataTables.forEach { table -> db.execSQL("DELETE FROM $table") }
+    }
+
+    private fun restoreTableRows(tables: JSONObject) {
+        val db = database.openHelper.writableDatabase
+        appDataTables.forEach { table ->
+            val rows = tables.optJSONArray(table) ?: return@forEach
+            for (rowIndex in 0 until rows.length()) {
+                val row = rows.getJSONObject(rowIndex)
+                val values = ContentValues()
+                val keys = row.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val value = row.get(key)
+                    when {
+                        value == JSONObject.NULL -> values.putNull(key)
+                        value is String && value.startsWith("base64:") ->
+                            values.put(key, Base64.decode(value.removePrefix("base64:"), Base64.NO_WRAP))
+                        value is String -> values.put(key, value)
+                        value is Boolean -> values.put(key, if (value) 1 else 0)
+                        value is Int -> values.put(key, value)
+                        value is Long -> values.put(key, value)
+                        value is Number -> values.put(key, value.toDouble())
+                        else -> throw IllegalArgumentException("Unsupported trash value for $table.$key")
+                    }
+                }
+                db.insert(table, SQLiteDatabase.CONFLICT_ABORT, values)
+            }
+        }
+    }
+
+    private suspend fun mergeSettingArray(key: String, additions: JSONArray, idField: String) {
+        val currentValue = database.settingDao().getSettingValue(key)
+        val merged = if (currentValue.isNullOrBlank()) JSONArray() else JSONArray(currentValue)
+        val existingIds = (0 until merged.length()).mapNotNull { index ->
+            merged.optJSONObject(index)?.optString(idField)?.takeIf(String::isNotBlank)
+        }.toMutableSet()
+        for (index in 0 until additions.length()) {
+            val addition = additions.getJSONObject(index)
+            val itemId = addition.optString(idField)
+            if (itemId.isBlank() || existingIds.add(itemId)) merged.put(addition)
+        }
+        database.settingDao().setSetting(SettingEntity(key, merged.toString()))
+    }
+
+    private data class TrashTableAction(
+        val table: String,
+        val selectSql: String,
+        val args: Array<Any?> = emptyArray(),
+        val deleteSql: String? = null,
+        val deleteArgs: Array<Any?> = emptyArray()
+    )
+
     suspend fun clearAllSessions() = withContext(Dispatchers.IO) {
-        database.sessionDao().clearAllSessions()
+        archiveTableData(
+            title = "Study sessions",
+            itemType = TrashItemType.DATABASE_ROWS,
+            selections = listOf(
+                TrashTableAction(
+                    table = "study_sessions",
+                    selectSql = "SELECT * FROM study_sessions",
+                    deleteSql = "DELETE FROM study_sessions"
+                )
+            )
+        )
+    }
+
+    suspend fun deleteReminderPermanentlyForMaintenance(reminder: ReminderEntity) = withContext(Dispatchers.IO) {
+        database.reminderDao().deleteReminder(reminder)
     }
 
     suspend fun clearAllAppData() = withContext(Dispatchers.IO) {
-        database.clearAllTables()
-        AppDatabase.populateInitialData(database)
+        clearAllAppDataToTrash()
     }
 
     suspend fun getSessionById(id: Long): StudySessionEntity? = withContext(Dispatchers.IO) {
@@ -641,11 +1054,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteSubject(subject: SubjectEntity) = withContext(Dispatchers.IO) {
-        database.withTransaction {
-            database.topicDao().deleteTopicsForSubject(subject.id)
-            database.chapterDao().deleteChaptersForSubject(subject.id)
-            database.subjectDao().deleteSubject(subject)
-        }
+        archiveSubject(subject)
     }
 
     // Topics
@@ -654,7 +1063,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteTopic(topic: TopicEntity) = withContext(Dispatchers.IO) {
-        database.topicDao().deleteTopic(topic)
+        archiveTopic(topic)
     }
 
     // Goals
@@ -676,7 +1085,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deletePreset(preset: PresetEntity) = withContext(Dispatchers.IO) {
-        database.presetDao().deletePreset(preset)
+        archivePreset(preset)
     }
 
     // Reminders
@@ -689,7 +1098,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
     }
 
     suspend fun deleteReminder(reminder: ReminderEntity) = withContext(Dispatchers.IO) {
-        database.reminderDao().deleteReminder(reminder)
+        archiveReminder(reminder)
     }
 
     // Settings
@@ -1182,6 +1591,7 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
 
             database.withTransaction {
                 if (replaceExisting) {
+                    archiveFullSnapshotInTransaction("Before JSON backup replacement")
                     database.sessionDao().clearAllSessions()
                     if (rootObject?.has("subjects") == true) {
                         database.subjectDao().clearAllSubjects()
@@ -1530,7 +1940,19 @@ class StudyRepository(private val database: AppDatabase, context: Context) {
 
             if (sessionList.isEmpty()) return@withContext false
             database.withTransaction {
-                if (replaceExisting) database.sessionDao().clearAllSessions()
+                if (replaceExisting) {
+                    archiveTableDataInTransaction(
+                        title = "Study sessions before CSV replacement",
+                        itemType = TrashItemType.DATABASE_ROWS,
+                        selections = listOf(
+                            TrashTableAction(
+                                table = "study_sessions",
+                                selectSql = "SELECT * FROM study_sessions",
+                                deleteSql = "DELETE FROM study_sessions"
+                            )
+                        )
+                    )
+                }
                 sessionList.chunked(500).forEach { chunk ->
                     database.sessionDao().insertSessions(chunk)
                 }

@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 
 import androidx.room.Index
+import java.util.UUID
 
 @Entity(
     tableName = "study_sessions",
@@ -192,3 +193,26 @@ data class RevisionSkipEntity(
     val skippedAtTimestamp: Long = System.currentTimeMillis(),
     val scheduledRecapTimestamp: Long
 )
+
+@Entity(
+    tableName = "trash_items",
+    indices = [Index(value = ["deletedAt"])]
+)
+data class TrashItemEntity(
+    @PrimaryKey
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val itemType: String,
+    val payloadJson: String,
+    val deletedAt: Long = System.currentTimeMillis()
+)
+
+object TrashItemType {
+    const val DATABASE_ROWS = "DATABASE_ROWS"
+    const val APP_SNAPSHOT = "APP_SNAPSHOT"
+    const val TODAYS_STUDY_DATA = "TODAYS_STUDY_DATA"
+    const val REVISION_RECORD = "REVISION_RECORD"
+    const val BRAIN_DUMP_NOTE = "BRAIN_DUMP_NOTE"
+    const val BRAIN_DUMP_NOTES = "BRAIN_DUMP_NOTES"
+    const val EXAM_TARGET = "EXAM_TARGET"
+}

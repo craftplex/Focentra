@@ -57,7 +57,7 @@ class FocentraApp : Application() {
             }
             legacyDefaults.forEach { reminder ->
                 StudyReminderScheduler.cancel(this@FocentraApp, reminder.id)
-                repository.deleteReminder(reminder)
+                repository.deleteReminderPermanentlyForMaintenance(reminder)
             }
             StudyReminderScheduler.scheduleAll(
                 this@FocentraApp,

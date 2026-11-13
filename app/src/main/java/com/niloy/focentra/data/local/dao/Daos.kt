@@ -321,3 +321,21 @@ interface RevisionSkipDao {
     @Query("DELETE FROM revision_skips")
     suspend fun clearAllSkips()
 }
+
+@Dao
+interface TrashDao {
+    @Query("SELECT * FROM trash_items ORDER BY deletedAt DESC")
+    fun getAllTrashItemsFlow(): Flow<List<TrashItemEntity>>
+
+    @Query("SELECT * FROM trash_items WHERE id = :id LIMIT 1")
+    suspend fun getTrashItem(id: String): TrashItemEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTrashItem(item: TrashItemEntity)
+
+    @Query("DELETE FROM trash_items WHERE id = :id")
+    suspend fun deleteTrashItem(id: String)
+
+    @Query("DELETE FROM trash_items")
+    suspend fun emptyTrash()
+}

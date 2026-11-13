@@ -57,7 +57,7 @@ fun HistoryScreen(
         AlertDialog(
             onDismissRequest = { sessionToDelete = null },
             title = { Text("Delete Session?") },
-            text = { Text("Are you sure you want to delete this study session from history? You can undo right after deleting.") },
+            text = { Text("Move this study session to Trash? You can restore it later or permanently delete it from Settings.") },
             confirmButton = {
                 Button(
                     onClick = {

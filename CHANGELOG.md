@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [8.0.12] - 2026-11-13
+
+- **Timer Revision Warning**: Keep the Timer screen and other-subject timer starts available when a revision is due; show a warning instead of replacing the screen with a mandatory revision prompt.
+- **Version Bump**: Updated `versionCode` to `76` and `versionName` to `8.0.12`.
+
 ## [8.0.11] - 2026-11-13
 
 - **Trash Bin & Study Data**: Add a warning-confirmed action to move today's sessions and revisions into a persistent Trash Bin; deleted app data can be restored or manually deleted permanently.

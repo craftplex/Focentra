@@ -102,11 +102,6 @@ fun TimerScreen(
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val presets by viewModel.presets.collectAsStateWithLifecycle()
     val examTargets by viewModel.examTargets.collectAsStateWithLifecycle()
-    val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
-    val revisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
-    val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
-    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
-
     var selectedMode by rememberSaveable { mutableStateOf(SessionMode.COUNTDOWN) }
     var selectedSubject by rememberSaveable { mutableStateOf("") }
     var selectedChapter by rememberSaveable { mutableStateOf("") }
@@ -128,107 +123,7 @@ fun TimerScreen(
     var warningTitle by remember { mutableStateOf("") }
     var warningMessage by remember { mutableStateOf("") }
     var showSelectionWarningDialog by remember { mutableStateOf(false) }
-    var skipDialogVisible by remember { mutableStateOf(false) }
-    var showRevisionInfo by rememberSaveable { mutableStateOf(false) }
-    var informedRevisionId by rememberSaveable { mutableStateOf("") }
-
     val brainDumpNotes by viewModel.brainDumpNotes.collectAsStateWithLifecycle()
-    val pendingRevision = remember(activeNotifications, revisionSkips, revisionHistory, sessions) {
-        viewModel.pendingMandatoryRevision()
-    }
-
-    LaunchedEffect(pendingRevision?.id) {
-        if (pendingRevision != null && informedRevisionId != pendingRevision.id) {
-            informedRevisionId = pendingRevision.id
-            showRevisionInfo = true
-        }
-    }
-
-    if (pendingRevision != null && timerState.status == TimerStatus.IDLE) {
-        if (showRevisionInfo) {
-            AlertDialog(
-                onDismissRequest = { showRevisionInfo = false },
-                title = { Text("Revision is due") },
-                text = {
-                    Text(
-                        "«${pendingRevision.chapterName}» (${pendingRevision.subjectName})-এর revision বাকি আছে। অন্য বিষয়ের timer শুরু করা যাবে, তবে আগে revision শেষ করার পরামর্শ দেওয়া হচ্ছে।"
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { showRevisionInfo = false }) { Text("Got it") }
-                }
-            )
-        }
-
-        if (skipDialogVisible) {
-            val skipCount = revisionSkips.count {
-                it.subjectName.equals(pendingRevision.subjectName, ignoreCase = true) &&
-                    it.chapterName.equals(pendingRevision.chapterName, ignoreCase = true)
-            }
-            SkipRevisionDialog(
-                subjectName = pendingRevision.subjectName,
-                chapterName = pendingRevision.chapterName,
-                currentSkipCount = skipCount,
-                onDismiss = { skipDialogVisible = false },
-                onConfirmSkip = { reason, recapAt ->
-                    viewModel.recordRevisionSkip(
-                        pendingRevision.subjectName,
-                        pendingRevision.chapterName,
-                        reason,
-                        recapAt
-                    ) { success, _ ->
-                        if (success) skipDialogVisible = false
-                    }
-                }
-            )
-        }
-
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "Mandatory Revision",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "${pendingRevision.subjectName} • ${pendingRevision.chapterName}",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(28.dp))
-            Button(
-                onClick = {
-                    viewModel.startRevisionTimer(
-                        durationMinutes = 60,
-                        subject = pendingRevision.subjectName,
-                        chapter = pendingRevision.chapterName,
-                        stage = pendingRevision.title
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Revision")
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = { skipDialogVisible = true },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Dismiss")
-            }
-        }
-        return
-    }
-
     val matchingChapters = remember(chapters, selectedSubject) {
         chapters.filter { it.subjectName.equals(selectedSubject, ignoreCase = true) }
     }

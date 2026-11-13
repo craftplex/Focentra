@@ -651,20 +651,13 @@ private fun RevisionTimerSection(viewModel: MainViewModel) {
                         warningMessage = "Please select a chapter before starting your revision session."
                         showSelectionWarningDialog = true
                     } else {
-                        val (isBlocked, blockReason) = viewModel.isTimerBlockedFor(selectedSubject, selectedChapter)
-                        if (isBlocked) {
-                            warningTitle = "Mandatory Revision Required"
-                            warningMessage = blockReason
-                            showSelectionWarningDialog = true
-                        } else {
-                            viewModel.startTimerSession(
-                                mode = SessionMode.STOPWATCH,
-                                subject = selectedSubject,
-                                chapter = selectedChapter,
-                                topic = "Revision Stopwatch",
-                                destination = NavigationTab.REVISION_HUB
-                            )
-                        }
+                        viewModel.startTimerSession(
+                            mode = SessionMode.STOPWATCH,
+                            subject = selectedSubject,
+                            chapter = selectedChapter,
+                            topic = "Revision Stopwatch",
+                            destination = NavigationTab.REVISION_HUB
+                        )
                     }
                 },
                 modifier = Modifier
@@ -1478,7 +1471,7 @@ fun SkipRevisionDialog(
 
                 if (currentSkipCount >= 5) {
                     Text(
-                        text = "Maximum 5 dismissals reached. After the reminder is due, study this chapter for 10 hours before starting another subject.",
+                        text = "Maximum 5 dismissals reached. After the reminder is due, 10 hours of study for this chapter is recommended before focusing on another subject.",
                         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.error
                     )

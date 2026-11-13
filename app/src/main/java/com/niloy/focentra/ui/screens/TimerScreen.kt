@@ -151,7 +151,7 @@ fun TimerScreen(
                 title = { Text("Revision is due") },
                 text = {
                     Text(
-                        "«${pendingRevision.chapterName}» (${pendingRevision.subjectName}) এখন রিভিশন করার সময়। অন্য বিষয়ের timer চালু করার আগে অন্তত ১ ঘণ্টা revision সম্পন্ন করুন।"
+                        "«${pendingRevision.chapterName}» (${pendingRevision.subjectName})-এর revision বাকি আছে। অন্য বিষয়ের timer শুরু করা যাবে, তবে আগে revision শেষ করার পরামর্শ দেওয়া হচ্ছে।"
                     )
                 },
                 confirmButton = {
@@ -959,27 +959,20 @@ fun TimerScreen(
                                 warningMessage = "Please select a chapter before starting your focus session."
                                 showSelectionWarningDialog = true
                             } else {
-                                val (isBlocked, blockReason) = viewModel.isTimerBlockedFor(selectedSubject, selectedChapter)
-                                if (isBlocked) {
-                                    warningTitle = "Mandatory Revision Required"
-                                    warningMessage = blockReason
-                                    showSelectionWarningDialog = true
-                                } else {
-                                    viewModel.startTimerSession(
-                                        mode = selectedMode,
-                                        subject = selectedSubject,
-                                        chapter = selectedChapter,
-                                        topic = topicText,
-                                        goal = goalText,
-                                        durationMinutes = selectedDurationMinutes,
-                                        pomodoroFocusMin = pomodoroFocusMin,
-                                        pomodoroShortBreakMin = pomodoroShortBreakMin,
-                                        pomodoroLongBreakMin = pomodoroLongBreakMin,
-                                        pomodoroRounds = pomodoroRounds,
-                                        autoStartBreaks = autoStartBreaks,
-                                        destination = NavigationTab.TIMER
-                                    )
-                                }
+                                viewModel.startTimerSession(
+                                    mode = selectedMode,
+                                    subject = selectedSubject,
+                                    chapter = selectedChapter,
+                                    topic = topicText,
+                                    goal = goalText,
+                                    durationMinutes = selectedDurationMinutes,
+                                    pomodoroFocusMin = pomodoroFocusMin,
+                                    pomodoroShortBreakMin = pomodoroShortBreakMin,
+                                    pomodoroLongBreakMin = pomodoroLongBreakMin,
+                                    pomodoroRounds = pomodoroRounds,
+                                    autoStartBreaks = autoStartBreaks,
+                                    destination = NavigationTab.TIMER
+                                )
                             }
                         },
                         modifier = Modifier

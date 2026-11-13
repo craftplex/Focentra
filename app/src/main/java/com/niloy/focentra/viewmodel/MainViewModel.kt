@@ -531,20 +531,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun isTimerBlockedFor(targetSubject: String, targetChapter: String): Pair<Boolean, String> {
+    fun timerStartWarningFor(targetSubject: String, targetChapter: String): String? {
         for (item in mandatoryRevisionNotifications()) {
             val requirement = revisionRequirement(item) ?: continue
             val isTargetMatching = targetSubject.trim().equals(item.subjectName.trim(), ignoreCase = true) &&
                 targetChapter.trim().equals(item.chapterName.trim(), ignoreCase = true)
             if (!isTargetMatching) {
                 val hoursText = if (requirement.first == 3600L) "1 hour of revision" else "10 hours of study"
-                return Pair(
-                    true,
-                    "Complete $hoursText for «${item.chapterName}» in ${item.subjectName} before starting a timer for another subject."
-                )
+                return "Revision is due: complete $hoursText for «${item.chapterName}» in ${item.subjectName} when you can. You can still start this timer."
             }
         }
-        return Pair(false, "")
+        return null
     }
 
     fun pendingMandatoryRevision(): AppNotification? =
@@ -567,7 +564,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     id = "revision_lock_${latest.subjectName.hashCode()}_${latest.chapterName.hashCode()}",
                     type = NotificationType.REVISION_DUE,
                     title = "10-hour chapter study required",
-                    message = "Study «${latest.chapterName}» for 10 hours before starting another subject.",
+                    message = "Study «${latest.chapterName}» for 10 hours when you can; revision is recommended before focusing on another subject.",
                     subjectName = latest.subjectName,
                     chapterName = latest.chapterName,
                     timestamp = latest.scheduledRecapTimestamp
@@ -977,11 +974,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             it.subjectName.equals(preset.subject, ignoreCase = true) &&
                 it.chapterName.equals(preset.topic, ignoreCase = true)
         }?.chapterName.orEmpty()
-        val (blocked, reason) = isTimerBlockedFor(preset.subject, chapter)
-        if (blocked || !ensureTimerIdle()) {
-            showTimerStartBlock(reason, blocked)
+        if (!ensureTimerIdle()) {
+            showTimerStartBlock()
             return false
         }
+        showRevisionTimerWarning(preset.subject, chapter)
         timerEngine.configureSession(
             mode = mode,
             subject = preset.subject,
@@ -1005,11 +1002,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         mode: SessionMode = SessionMode.COUNTDOWN,
         chapter: String = ""
     ): Boolean {
-        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
-        if (blocked || !ensureTimerIdle()) {
-            showTimerStartBlock(reason, blocked)
+        if (!ensureTimerIdle()) {
+            showTimerStartBlock()
             return false
         }
+        showRevisionTimerWarning(subject, chapter)
         timerEngine.configureSession(
             mode = mode,
             subject = subject,
@@ -1037,11 +1034,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         autoStartBreaks: Boolean = false,
         destination: NavigationTab = NavigationTab.TIMER
     ): Boolean {
-        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
-        if (blocked || !ensureTimerIdle()) {
-            showTimerStartBlock(reason, blocked)
+        if (!ensureTimerIdle()) {
+            showTimerStartBlock()
             return false
         }
+        showRevisionTimerWarning(subject, chapter)
         timerEngine.configureSession(
             mode = mode,
             subject = subject,
@@ -1068,11 +1065,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         chapter: String,
         stage: String = "Revision"
     ): Boolean {
-        val (blocked, reason) = isTimerBlockedFor(subject, chapter)
-        if (blocked || !ensureTimerIdle()) {
-            showTimerStartBlock(reason, blocked)
+        if (!ensureTimerIdle()) {
+            showTimerStartBlock()
             return false
         }
+        showRevisionTimerWarning(subject, chapter)
         timerEngine.configureSession(
             mode = SessionMode.COUNTDOWN,
             subject = subject,
@@ -1089,14 +1086,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return timerEngine.uiState.value.status == TimerStatus.IDLE
     }
 
-    private fun showTimerStartBlock(message: String, blocked: Boolean) {
+    private fun showRevisionTimerWarning(subject: String, chapter: String) {
+        val warning = timerStartWarningFor(subject, chapter) ?: return
+        viewModelScope.launch { _snackbarMessage.emit(warning) }
+    }
+
+    private fun showTimerStartBlock() {
         viewModelScope.launch {
-            _snackbarMessage.emit(
-                when {
-                    blocked -> message
-                    else -> "Finish or cancel the current timer before starting another session."
-                }
-            )
+            _snackbarMessage.emit("Finish or cancel the current timer before starting another session.")
         }
     }
 

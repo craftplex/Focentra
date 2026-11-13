@@ -1089,12 +1089,7 @@ fun QuickTimerSubjectDialog(
                     } else if (selectedChapter.isBlank()) {
                         warningText = "Please select a chapter."
                     } else {
-                        val (isBlocked, blockReason) = viewModel.isTimerBlockedFor(finalSubject, selectedChapter)
-                        if (isBlocked) {
-                            warningText = blockReason
-                        } else {
-                            onStart(finalSubject, selectedChapter)
-                        }
+                        onStart(finalSubject, selectedChapter)
                     }
                 },
                 shape = RoundedCornerShape(12.dp)

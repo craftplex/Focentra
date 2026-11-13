@@ -77,19 +77,6 @@ class MainActivity : ComponentActivity() {
             val timerState by viewModel.timerEngine.uiState.collectAsStateWithLifecycle()
             val reminders by viewModel.reminders.collectAsStateWithLifecycle()
             val chapters by viewModel.chapters.collectAsStateWithLifecycle()
-            val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
-            val revisionSkips by viewModel.dbRevisionSkips.collectAsStateWithLifecycle()
-            val revisionHistory by viewModel.revisionHistory.collectAsStateWithLifecycle()
-            val sessions by viewModel.sessions.collectAsStateWithLifecycle()
-            val hasMandatoryRevision = remember(
-                activeNotifications,
-                revisionSkips,
-                revisionHistory,
-                sessions
-            ) {
-                viewModel.pendingMandatoryRevision() != null
-            }
-
             val isBottomBarVisible = remember { mutableStateOf(true) }
             val nestedScrollConnection = remember {
                 object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
@@ -381,10 +368,7 @@ class MainActivity : ComponentActivity() {
                                     currentTab != NavigationTab.ACHIEVEMENTS &&
                                     currentTab != NavigationTab.PRESETS &&
                                     currentTab != NavigationTab.NOTIFICATIONS &&
-                                    currentTab != NavigationTab.REVISION_HUB &&
-                                    !(currentTab == NavigationTab.TIMER &&
-                                        hasMandatoryRevision &&
-                                        timerState.status == com.niloy.focentra.engine.TimerStatus.IDLE)
+                                    currentTab != NavigationTab.REVISION_HUB
 
                             AnimatedVisibility(
                                 visible = isBottomBarVisible.value && shouldShowBottomBar,
